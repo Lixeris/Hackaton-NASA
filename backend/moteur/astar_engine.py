@@ -29,7 +29,8 @@ def construire_graphe(grille, taille, profil, facteur_horaire, mode="normal"):
         for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
             voisin = (i + di, j + dj)
             if voisin in G.nodes:
-                poids = (G.nodes[(i, j)]["cout"] + G.nodes[voisin]["cout"]) / 2
+                distance_pas = (di**2 + dj**2) ** 0.5  # Vaut 1.0 ou 1.4142...
+                poids = ((G.nodes[(i, j)]["cout"] + G.nodes[voisin]["cout"]) / 2) * distance_pas
                 G.add_edge((i, j), voisin, weight=poids)
     return G
 
@@ -42,8 +43,13 @@ def calculer_chemin(grille, taille, depart, arrivee, profil, facteur_horaire, mo
     G = construire_graphe(grille, taille, profil, facteur_horaire, mode)
     if depart not in G.nodes or arrivee not in G.nodes:
         return None
+    cout_min = min(nx.get_node_attributes(G, "cout").values())
     try:
-        chemin = nx.astar_path(G, depart, arrivee, heuristic=distance_euclidienne, weight="weight")
+        chemin = nx.astar_path(
+            G, depart, arrivee, 
+            heuristic=lambda a, b: distance_euclidienne(a, b) * cout_min, 
+            weight="weight"
+        )
     except nx.NetworkXNoPath:
         return None
     cout_total = sum(G.nodes[n]["cout"] for n in chemin)

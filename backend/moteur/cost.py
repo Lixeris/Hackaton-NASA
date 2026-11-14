@@ -7,7 +7,7 @@ def pente_max(profil):
     # Le rover porte l'essentiel du materiel, donc le poids transporte penalise
     # bien moins sa tolerance de pente que celle d'un astronaute qui porte tout
     # sur lui -> le rover reste la version "plus permissive" face a un equipement lourd.
-    base = 20
+    base = 30 if profil["rover"] else 20
     poids_effectif = profil["poids_kg"] * (0.3 if profil["rover"] else 1.0)
     penalite_poids = 0.05 * poids_effectif
     return max(base - penalite_poids, 5)
@@ -19,11 +19,12 @@ def marge_securite(profil):
 
 # ---- Vitesse et consommation ----
 
-VITESSE_BASE_M_MIN = 50  # m/min, valeur de depart a calibrer avec le groupe Donnees
-
+VITESSE_BASE_PIETON_M_MIN = 50  # m/min, valeur de depart a calibrer avec le groupe Donnees
+VITESSE_BASE_ROVER_M_MIN = 160
 
 def vitesse_groupe(profil):
-    return VITESSE_BASE_M_MIN / (1 + 0.1 * (profil["nb_personnes"] - 1))
+    vitesse_base = VITESSE_BASE_ROVER_M_MIN if profil["rover"] else VITESSE_BASE_PIETON_M_MIN
+    return vitesse_base / (1 + 0.1 * (profil["nb_personnes"] - 1))
 
 
 def temps_total_minutes(distance_m, profil):

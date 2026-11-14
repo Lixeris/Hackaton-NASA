@@ -1,23 +1,117 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Interplanetary Survival Guide — Martian Map</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css" />
+<meta charset="utf-8">
+<title>Martian Map – Navigation Jezero</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+  #app { display: flex; height: 100%; }
+  #panneau { width: 280px; padding: 14px; background: #1c1411; color: #f0e2d8; overflow-y: auto; }
+  #panneau h2 { margin: 0 0 10px; font-size: 18px; }
+  #panneau label { display: block; margin: 10px 0 2px; font-size: 13px; }
+  #panneau select, #panneau input { width: 100%; box-sizing: border-box; }
+  #panneau button { margin-top: 12px; width: 100%; padding: 8px; cursor: pointer; }
+  #resultat { margin-top: 14px; font-size: 14px; line-height: 1.5; }
+  .ko { color: #ff8a6b; } .ok { color: #8be08b; }
+  #map { flex: 1; background: #000; }
+</style>
 </head>
 <body>
-  <div id="map"></div>
-  <div id="panel">
-    <h3>Profil de mission</h3>
-    <label>Nombre de personnes : <input type="range" id="teamSize" min="1" max="4" value="1"></label>
-    <label>Poids équipement (kg) : <input type="number" id="equipWeight" value="20" min="10" max="150"></label>
-    <label><input type="checkbox" id="hasRover"> Rover présent</label>
-    <button id="computeBtn">Calculer l'itinéraire</button>
-    <div id="result"></div>
-  </div>
+<div id="app">
+  <div id="panneau">
+    <h2>Navigation Jezero</h2>
+    <div id="aide">Clique sur la carte : 1er clic = départ, 2e clic = arrivée.</div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js"></script>
+    <label>Profil</label>
+    <select id="rover"><option value="true">Rover</option><option value="false">Astronaute à pied</option></select>
+    <label>Poids transporté (kg)</label><input id="poids" type="number" value="50">
+    <label>Nombre de personnes</label><input id="nb" type="number" value="1" min="1">
+    <label>Type de trajet</label>
+    <select id="trajet"><option value="aller">Aller simple</option><option value="aller_retour">Aller-retour</option></select>
+    <label>Mode</label>
+    <select id="mode"><option value="normal">Normal</option><option value="alternatif">Alternatif (évite données peu fiables)</option></select>
+
+    <button id="btnCalc">Calculer l'itinéraire</button>
+    <button id="btnReset">Réinitialiser</button>
+    <div id="resultat"></div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let H, W, carte, depart = null, arrivee = null, mDepart, mArrivee, trace;
+
+// Conversions grille (i = ligne vers le bas, j = colonne) <-> Leaflet CRS.Simple ([y vers le haut, x])
+const versLatLng = (i, j) => [H - i - 0.5, j + 0.5];
+const versCellule = (latlng) => [Math.floor(H - latlng.lat), Math.floor(latlng.lng)];
+
+async function init() {
+  const info = await (await fetch("/api/info")).json();
+  H = info.hauteur; W = info.largeur;
+  carte = L.map("map", { crs: L.CRS.Simple, minZoom: -2, maxZoom: 5, zoomSnap: 0.25 });
+  const bornes = [[0, 0], [H, W]];
+  L.imageOverlay("/fond.png", bornes).addTo(carte);
+  carte.fitBounds(bornes);
+  carte.setMaxBounds([[-20, -20], [H + 20, W + 20]]);
+  carte.on("click", clicCarte);
+}
+
+function clicCarte(e) {
+  const [i, j] = versCellule(e.latlng);
+  if (i < 0 || j < 0 || i >= H || j >= W) return;
+  if (!depart || (depart && arrivee)) {            // nouveau trajet
+    reset();
+    depart = [i, j];
+    mDepart = L.circleMarker(versLatLng(i, j), { radius: 7, color: "#4aa3ff", fillOpacity: 1 }).addTo(carte).bindTooltip("Départ");
+  } else {
+    arrivee = [i, j];
+    mArrivee = L.circleMarker(versLatLng(i, j), { radius: 7, color: "#ff5a3c", fillOpacity: 1 }).addTo(carte).bindTooltip("Arrivée");
+  }
+}
+
+function reset() {
+  [mDepart, mArrivee, trace].forEach(x => x && carte.removeLayer(x));
+  depart = arrivee = mDepart = mArrivee = trace = null;
+  document.getElementById("resultat").innerHTML = "";
+}
+
+async function calculer() {
+  const out = document.getElementById("resultat");
+  if (!depart || !arrivee) { out.innerHTML = "<span class='ko'>Choisis un départ et une arrivée.</span>"; return; }
+  out.textContent = "Calcul…";
+  const rep = await fetch("/api/route", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      depart, arrivee,
+      mode: document.getElementById("mode").value,
+      profil: {
+        rover: document.getElementById("rover").value === "true",
+        poids_kg: parseFloat(document.getElementById("poids").value),
+        nb_personnes: parseInt(document.getElementById("nb").value),
+        type_trajet: document.getElementById("trajet").value,
+      },
+    }),
+  });
+  const d = await rep.json();
+  if (!rep.ok) { out.innerHTML = `<span class='ko'>${d.erreur}</span>`; return; }
+  if (trace) carte.removeLayer(trace);
+  trace = L.polyline(d.chemin.map(([i, j]) => versLatLng(i, j)), { color: d.faisable ? "#ffd23c" : "#ff5a3c", weight: 4 }).addTo(carte);
+  out.innerHTML = `
+    Distance : <b>${(d.distance_m / 1000).toFixed(1)} km</b><br>
+    Durée : <b>${d.temps_min} min</b><br>
+    Consommation : <b>${d.conso_pct} %</b><br>
+    Faisable : <b class="${d.faisable ? "ok" : "ko"}">${d.faisable ? "oui" : "non (" + d.causes.join(", ") + ")"}</b>
+    <br>Départ conseillé : <b>${d.meteo.depart}</b> (arrivée ~${d.meteo.arrivee})
+    ${d.meteo.hors_fenetre ? "<br><span class='ko'>⚠ trajet en dehors de la plage chaude de la journée</span>" : ""}
+    ${d.confiance_basse ? "<br><span class='ko'>⚠ passe par des données peu fiables</span>" : ""}`;
+}
+
+document.getElementById("btnCalc").onclick = calculer;
+document.getElementById("btnReset").onclick = reset;
+init();
+</script>
 </body>
 </html>
