@@ -1,0 +1,63 @@
+from flask import Flask, request, jsonify
+
+from moteur.astar_engine import grille_factice, calculer_chemin
+from moteur.weather import facteur_horaire, niveau_donnee_utilise
+from moteur.cost import est_faisable
+
+app = Flask(__name__)
+GRILLE, TAILLE = grille_factice()
+
+
+def heures_du_jour():
+    # TODO (Phase 1) : remplacer les bornes 6/18 par marstime.sunrise_sunset(lat, lon) pour Jezero
+    return [h * 0.5 for h in range(12, 36)]  # 6h00 a 18h00 par pas de 30 min
+
+
+def cellule_depuis_coords(lat, lon):
+    # TODO : conversion reelle lat/lon -> indices de grille via la georeference QGIS
+    i = int(abs(lat) * 2) % TAILLE
+    j = int(abs(lon) * 2) % TAILLE
+    return (i, j)
+
+
+@app.route("/route", methods=["POST"])
+def route():
+    data = request.get_json()
+    profil = data["profil"]
+    depart = cellule_depuis_coords(**data["depart"])
+    arrivee = cellule_depuis_coords(**data["arrivee"])
+
+    meilleur, meilleure_heure = None, None
+    for h in heures_du_jour():
+        f = facteur_horaire(h)
+        resultat = calculer_chemin(GRILLE, TAILLE, depart, arrivee, profil, f)
+        if resultat and (meilleur is None or resultat["cout_total"] < meilleur["cout_total"]):
+            meilleur, meilleure_heure = resultat, h
+
+    if meilleur is None:
+        return jsonify({"faisable": False, "message": "Aucun chemin trouve"})
+
+    distance_m = len(meilleur["chemin"]) * 50  # TODO : vraie distance georeferencee
+    faisable, causes = est_faisable(distance_m, profil)
+
+    alternatif = None
+    if meilleur["confiance_basse"]:
+        alt = calculer_chemin(GRILLE, TAILLE, depart, arrivee, profil, facteur_horaire(meilleure_heure), mode="alternatif")
+        if alt and alt["chemin"] != meilleur["chemin"]:
+            alternatif = {"chemin": alt["chemin"], "cout_total": alt["cout_total"]}
+
+    return jsonify({
+        "chemin": meilleur["chemin"],
+        "distance_m": distance_m,
+        "risque": meilleur["cout_total"],
+        "heure_recommandee": f"{int(meilleure_heure):02d}:{int((meilleure_heure % 1) * 60):02d}",
+        "niveau_donnee": niveau_donnee_utilise(),
+        "confiance_donnee": "basse" if meilleur["confiance_basse"] else "haute",
+        "chemin_alternatif": alternatif,
+        "faisable": faisable,
+        "cause_infaisabilite": causes if causes else None,
+    })
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
