@@ -72,3 +72,31 @@ def cout_cellule(cell, profil, facteur_horaire=1.0, mode="normal"):
     if mode == "alternatif" and cell.get("confiance") == "basse":
         cout += 10
     return cout
+
+
+# ---- Repli sur destination connue si la demandee n'est pas faisable ----
+
+DESTINATIONS_CONNUES = {
+    "abri_1": (2, 8),
+    "abri_2": (7, 2),
+    "point_eleve": (9, 9),
+}
+
+
+def trouver_destination_faisable(depart, destination_demandee, profil, calculer_chemin_fn, grille, taille, facteur_horaire):
+    chemin = calculer_chemin_fn(grille, taille, depart, destination_demandee, profil, facteur_horaire)
+    if chemin:
+        faisable, causes = est_faisable(len(chemin["chemin"]) * 50, profil)
+        if faisable:
+            return chemin, destination_demandee, None, []
+
+    for nom, coords in DESTINATIONS_CONNUES.items():
+        if coords == destination_demandee:
+            continue
+        alt = calculer_chemin_fn(grille, taille, depart, coords, profil, facteur_horaire)
+        if alt:
+            faisable, causes = est_faisable(len(alt["chemin"]) * 50, profil)
+            if faisable:
+                return alt, coords, f"Destination demandee hors de portee ; repli sur '{nom}'", []
+
+    return None, None, "Aucune destination connue n'est atteignable avec ces ressources", ["ressources"]

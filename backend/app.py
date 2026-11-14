@@ -1,16 +1,11 @@
 from flask import Flask, request, jsonify
 
 from moteur.astar_engine import grille_factice, calculer_chemin
-from moteur.weather import facteur_horaire, niveau_donnee_utilise
+from moteur.weather import facteur_horaire, niveau_donnee_utilise, heures_du_jour
 from moteur.cost import est_faisable, trouver_destination_faisable
 
 app = Flask(__name__)
 GRILLE, TAILLE = grille_factice()
-
-
-def heures_du_jour():
-    # TODO (Phase 1) : remplacer les bornes 6/18 par marstime.sunrise_sunset(lat, lon) pour Jezero
-    return [h * 0.5 for h in range(12, 36)]  # 6h00 a 18h00 par pas de 30 min
 
 
 def cellule_depuis_coords(lat, lon):
