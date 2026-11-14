@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 
 from moteur.astar_engine import grille_factice, calculer_chemin
 from moteur.weather import facteur_horaire, niveau_donnee_utilise
-from moteur.cost import est_faisable
+from moteur.cost import est_faisable, trouver_destination_faisable
 
 app = Flask(__name__)
 GRILLE, TAILLE = grille_factice()
@@ -40,6 +40,24 @@ def route():
     distance_m = len(meilleur["chemin"]) * 50  # TODO : vraie distance georeferencee
     faisable, causes = est_faisable(distance_m, profil)
 
+    destination_recommandee = None
+    message = None
+
+    if not faisable:
+        f = facteur_horaire(meilleure_heure)
+        chemin_repli, destination_choisie, message_repli, causes_repli = trouver_destination_faisable(
+            depart, arrivee, profil, calculer_chemin, GRILLE, TAILLE, f
+        )
+        if chemin_repli:
+            meilleur = chemin_repli
+            destination_recommandee = destination_choisie
+            distance_m = len(meilleur["chemin"]) * 50
+            faisable, causes = True, []
+            message = message_repli
+        else:
+            causes = causes_repli
+            message = message_repli
+
     alternatif = None
     if meilleur["confiance_basse"]:
         alt = calculer_chemin(GRILLE, TAILLE, depart, arrivee, profil, facteur_horaire(meilleure_heure), mode="alternatif")
@@ -48,6 +66,8 @@ def route():
 
     return jsonify({
         "chemin": meilleur["chemin"],
+        "destination_recommandee": destination_recommandee,
+        "message": message,
         "distance_m": distance_m,
         "risque": meilleur["cout_total"],
         "heure_recommandee": f"{int(meilleure_heure):02d}:{int((meilleure_heure % 1) * 60):02d}",
