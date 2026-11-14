@@ -10,7 +10,7 @@ from moteur.weather import niveau_donnee_utilise, recommander_depart
 
 RACINE = Path(__file__).resolve().parent.parent
 FRONTEND = RACINE / "frontend"
-PENTE = RACINE / "tifs" / "pente_pour_cam.tif"
+PENTE = RACINE / "tifs" / "pente.tif"
 
 app = Flask(__name__, static_folder=str(FRONTEND), static_url_path="")
 
