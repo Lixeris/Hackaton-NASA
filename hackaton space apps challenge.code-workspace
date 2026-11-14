@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "formadvb",
+			"path": "../../../../../Documents/PlatformIO/Projects/formadvb"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"random": "cpp"
+		}
+	}
+}
