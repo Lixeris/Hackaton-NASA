@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Interplanetary Survival Guide — Martian Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="map"></div>
+  <div id="panel">
+    <h3>Profil de mission</h3>
+    <label>Nombre de personnes : <input type="range" id="teamSize" min="1" max="4" value="1"></label>
+    <label>Poids équipement (kg) : <input type="number" id="equipWeight" value="20" min="10" max="150"></label>
+    <label><input type="checkbox" id="hasRover"> Rover présent</label>
+    <button id="computeBtn">Calculer l'itinéraire</button>
+    <div id="result"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
