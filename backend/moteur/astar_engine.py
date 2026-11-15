@@ -1,7 +1,12 @@
-import networkx as nx
+import heapq
+import math
+
 import numpy as np
 
 from .cost import cout_cellule
+
+VOISINS = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
+_CACHE = {}   # couts par cellule, calcules une seule fois par profil (la grille ne change pas)
 
 
 def grille_factice(taille=20, seed=0):
@@ -18,40 +23,57 @@ def grille_factice(taille=20, seed=0):
     return grille, taille
 
 
-def construire_graphe(grille, taille, profil, facteur_horaire, mode="normal"):
-    G = nx.Graph()
-    for (i, j), cell in grille.items():
-        cout = cout_cellule(cell, profil, facteur_horaire, mode)
-        if cout == float("inf"):
+def _couts(grille, profil, facteur_horaire):
+    cle = (id(grille), bool(profil["rover"]), facteur_horaire)
+    if cle not in _CACHE:
+        couts = {}
+        for pos, cell in grille.items():
+            c = cout_cellule(cell, profil, facteur_horaire)
+            if c != math.inf:
+                couts[pos] = c
+        _CACHE[cle] = (couts, min(couts.values()) if couts else 0.0)
+    return _CACHE[cle]
+
+
+def calculer_chemin(grille, taille, depart, arrivee, profil, facteur_horaire):
+    couts, cout_min = _couts(grille, profil, facteur_horaire)
+    if depart not in couts or arrivee not in couts:
+        return None
+
+    def h(p):
+        return math.hypot(p[0] - arrivee[0], p[1] - arrivee[1]) * cout_min
+
+    g = {depart: 0.0}
+    parent = {}
+    ferme = set()
+    file = [(h(depart), depart)]
+    while file:
+        _, u = heapq.heappop(file)
+        if u == arrivee:
+            break
+        if u in ferme:
             continue
-        G.add_node((i, j), cout=cout, confiance=cell["confiance"])
-    for (i, j) in list(G.nodes):
-        for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
-            voisin = (i + di, j + dj)
-            if voisin in G.nodes:
-                distance_pas = (di**2 + dj**2) ** 0.5  # Vaut 1.0 ou 1.4142...
-                poids = ((G.nodes[(i, j)]["cout"] + G.nodes[voisin]["cout"]) / 2) * distance_pas
-                G.add_edge((i, j), voisin, weight=poids)
-    return G
-
-
-def distance_euclidienne(a, b):
-    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
-
-
-def calculer_chemin(grille, taille, depart, arrivee, profil, facteur_horaire, mode="normal"):
-    G = construire_graphe(grille, taille, profil, facteur_horaire, mode)
-    if depart not in G.nodes or arrivee not in G.nodes:
+        ferme.add(u)
+        cu = couts[u]
+        for di, dj in VOISINS:
+            v = (u[0] + di, u[1] + dj)
+            cv = couts.get(v)
+            if cv is None or v in ferme:
+                continue
+            nv = g[u] + (cu + cv) / 2 * math.hypot(di, dj)
+            if nv < g.get(v, math.inf):
+                g[v] = nv
+                parent[v] = u
+                heapq.heappush(file, (nv + h(v), v))
+    else:
         return None
-    cout_min = min(nx.get_node_attributes(G, "cout").values())
-    try:
-        chemin = nx.astar_path(
-            G, depart, arrivee, 
-            heuristic=lambda a, b: distance_euclidienne(a, b) * cout_min, 
-            weight="weight"
-        )
-    except nx.NetworkXNoPath:
+    if arrivee not in g:
         return None
-    cout_total = sum(G.nodes[n]["cout"] for n in chemin)
-    confiance_basse = any(G.nodes[n]["confiance"] == "basse" for n in chemin)
+
+    chemin = [arrivee]
+    while chemin[-1] != depart:
+        chemin.append(parent[chemin[-1]])
+    chemin.reverse()
+    cout_total = sum(couts[n] for n in chemin)
+    confiance_basse = any(grille[n]["confiance"] == "basse" for n in chemin)
     return {"chemin": chemin, "cout_total": cout_total, "confiance_basse": confiance_basse}

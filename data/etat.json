@@ -1,0 +1,35 @@
+{
+  "reglages": {
+    "air_bonbonne_kg": 0.55,
+    "autonomie_rover_km": 100.0
+  },
+  "abris": [
+    {
+      "nom": "Abri 1",
+      "lat": 18.5,
+      "lon": 77.35
+    },
+    {
+      "nom": "Abri 2",
+      "lat": 18.45,
+      "lon": 77.4
+    },
+    {
+      "nom": "Abri 3",
+      "lat": 18.4,
+      "lon": 77.45
+    }
+  ],
+  "rapports": [
+    {
+      "titre": "rapport test2",
+      "texte": "ouqubefjnfdobbp",
+      "date": "15/11/2026 10:49"
+    },
+    {
+      "titre": "Rapport test",
+      "texte": "[pleins d'infos surper intéressantes sur mars ouahh]",
+      "date": "15/11/2026 10:46"
+    }
+  ]
+}

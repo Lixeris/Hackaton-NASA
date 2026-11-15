@@ -1,98 +1,110 @@
+import json
+import math
+from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, jsonify, request
 
 from moteur.astar_engine import calculer_chemin, grille_factice
-from moteur.cost import consommation_estimee_pct, est_faisable, temps_total_minutes
-from moteur.donnees_mnt import (cellule_vers_latlon, generer_fond_pente, grille_depuis_pente,
-                                latlon_vers_cellule, longueur_chemin_m)
-from moteur.weather import niveau_donnee_utilise, recommander_depart
+from moteur.cost import bonbonnes_necessaires, est_faisable, temps_total_minutes
+from moteur.donnees_mnt import (RAYON_MARS_M, cellule_vers_latlon, generer_fond_pente,
+                                grille_depuis_pente, latlon_vers_cellule, longueur_chemin_m)
 
 RACINE = Path(__file__).resolve().parent.parent
 FRONTEND = RACINE / "frontend"
 PENTE = RACINE / "tifs" / "pente.tif"
+FICHIER_ETAT = RACINE / "data" / "etat.json"
 
 app = Flask(__name__, static_folder=str(FRONTEND), static_url_path="")
 
-# Charge UNE fois au demarrage (pas a chaque requete)
+# Charge UNE fois au demarrage
 try:
     GRILLE, TAILLE, META = grille_depuis_pente(str(PENTE))
     MODE_DEMO = False
-    generer_fond_pente(str(PENTE), str(FRONTEND / "fond.png"))   # regenere a chaque demarrage
+    generer_fond_pente(str(PENTE), str(FRONTEND / "fond.png"))
 except FileNotFoundError:
     print("Raster de pentes introuvable -> MODE DEMO (grille factice)")
     GRILLE, TAILLE = grille_factice(100)
-    # georeference de la zone Jezero 10 km, pour que lat/lon fonctionne quand meme
     META = {"taille_cellule_m": 100.0, "shape": (100, 100), "origine_xy": (4583443.25, 1098633.14)}
     MODE_DEMO = True
 H, W = META["shape"]
 
-PROFIL_DEFAUT = {"rover": True, "poids_kg": 50, "nb_personnes": 1,
-                 "oxygene_pct": 100, "batterie_pct": 100, "type_trajet": "aller"}
+
+# ------------------------------------------------------------------ Etat serveur (abris, reglages, rapports)
+ETAT_DEFAUT = {
+    "reglages": {"air_bonbonne_kg": 0.55, "autonomie_rover_km": 100},
+    # Abris fictifs dans la zone Jezero (a remplacer par les vrais)
+    "abris": [
+        {"nom": "Abri 1", "lat": 18.50, "lon": 77.35},
+        {"nom": "Abri 2", "lat": 18.45, "lon": 77.40},
+        {"nom": "Abri 3", "lat": 18.40, "lon": 77.45},
+    ],
+    "rapports": [],
+}
 
 
-def _latlon(chemin):
-    return [list(cellule_vers_latlon(i, j, META)) for i, j in chemin]
+def ecrire_etat(etat):
+    FICHIER_ETAT.parent.mkdir(exist_ok=True)
+    FICHIER_ETAT.write_text(json.dumps(etat, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def lire_etat():
+    if not FICHIER_ETAT.exists():
+        ecrire_etat(ETAT_DEFAUT)
+    return json.loads(FICHIER_ETAT.read_text(encoding="utf-8"))
+
+
+# ------------------------------------------------------------------ Calcul d'itineraire
 def resoudre(depart, arrivee, profil):
-    """Coeur commun aux deux routes : depart/arrivee = cellules (i, j)."""
-    profil = {**PROFIL_DEFAUT, **profil}
-    # facteur_horaire = 1.0 : l'heure ne module plus le risque (decision d'equipe)
+    """depart/arrivee = cellules (i, j)."""
+    reglages = lire_etat()["reglages"]
+    profil = {"rover": bool(profil.get("rover", True))}
     res = calculer_chemin(GRILLE, TAILLE, depart, arrivee, profil, 1.0)
     if res is None:
         return None
     dist = longueur_chemin_m(res["chemin"], META["taille_cellule_m"])
     duree = temps_total_minutes(dist, profil)
-    faisable, causes = est_faisable(dist, profil)
-
-    alternatif = None
-    if res["confiance_basse"]:
-        alt = calculer_chemin(GRILLE, TAILLE, depart, arrivee, profil, 1.0, mode="alternatif")
-        if alt and alt["chemin"] != res["chemin"]:
-            alternatif = {"chemin": alt["chemin"], "chemin_latlon": _latlon(alt["chemin"]),
-                          "cout_total": alt["cout_total"]}
+    faisable, causes = est_faisable(dist, profil, reglages["autonomie_rover_km"])
     return {
-        "res": res, "dist": dist, "duree": duree, "profil": profil,
-        "conso": consommation_estimee_pct(dist, profil),
-        "faisable": faisable, "causes": causes,
-        "meteo": recommander_depart(duree), "alternatif": alternatif,
+        "res": res, "dist": dist, "duree": duree, "faisable": faisable, "causes": causes,
+        "bonbonnes": bonbonnes_necessaires(duree, reglages["air_bonbonne_kg"]),
     }
 
 
-# ------------------------------------------------------------------ /route : format de ton frontend (lat/lon)
-@app.route("/route", methods=["POST"])
+def _reponse(r):
+    chemin = r["res"]["chemin"]
+    return dict(
+        chemin=[list(c) for c in chemin],
+        chemin_latlon=[list(cellule_vers_latlon(i, j, META)) for i, j in chemin],
+        distance_m=round(r["dist"]), temps_min=round(r["duree"], 1), bonbonnes=r["bonbonnes"],
+        faisable=r["faisable"],
+        message=None if r["faisable"] else "Attention : trajet impossible en rover",
+    )
+
+
+@app.post("/route")  # format lat/lon
 def route():
     data = request.get_json()
     depart = latlon_vers_cellule(**data["depart"], meta=META)
     arrivee = latlon_vers_cellule(**data["arrivee"], meta=META)
     if depart is None or arrivee is None:
-        return jsonify({"faisable": False, "message": "Point hors de la zone cartographiee"}), 400
-
+        return jsonify(faisable=False, message="Point hors de la zone cartographiee"), 400
     r = resoudre(depart, arrivee, data.get("profil", {}))
     if r is None:
-        return jsonify({"faisable": False, "message": "Aucun chemin trouve"})
-
-    chemin = r["res"]["chemin"]
-    return jsonify({
-        "chemin": chemin,
-        "chemin_latlon": _latlon(chemin),
-        "distance_m": round(r["dist"]),
-        "temps_min": round(r["duree"], 1),
-        "conso_pct": round(r["conso"], 1),
-        "risque": r["res"]["cout_total"],
-        "heure_recommandee": r["meteo"]["depart"],
-        "heure_arrivee": r["meteo"]["arrivee"],
-        "hors_fenetre_chaude": r["meteo"]["hors_fenetre"],
-        "niveau_donnee": niveau_donnee_utilise(),
-        "confiance_donnee": "basse" if r["res"]["confiance_basse"] else "haute",
-        "chemin_alternatif": r["alternatif"],
-        "faisable": r["faisable"],
-        "cause_infaisabilite": r["causes"] if r["causes"] else None,
-    })
+        return jsonify(faisable=False, message="Aucun chemin trouve")
+    return jsonify(_reponse(r))
 
 
-# ------------------------------------------------------------------ /api/* : pour index.html (clics sur la grille)
+@app.post("/api/route")  # format cellules (i, j)
+def api_route():
+    d = request.get_json()
+    r = resoudre(tuple(d["depart"]), tuple(d["arrivee"]), d.get("profil", {}))
+    if r is None:
+        return jsonify(erreur="Aucun chemin possible (départ/arrivée infranchissable ou isolés)"), 404
+    return jsonify(_reponse(r))
+
+
+# ------------------------------------------------------------------ Pages et infos carte
 @app.get("/")
 def accueil():
     return app.send_static_file("index.html")
@@ -100,26 +112,72 @@ def accueil():
 
 @app.get("/api/info")
 def info():
-    return jsonify(hauteur=H, largeur=W, taille_cellule_m=META["taille_cellule_m"], demo=MODE_DEMO)
-
-
-@app.post("/api/route")
-def api_route():
-    d = request.get_json()
-    mode = d.get("mode", "normal")
-    depart, arrivee = tuple(d["depart"]), tuple(d["arrivee"])
-    r = resoudre(depart, arrivee, d.get("profil", {}))
-    if r is None:
-        return jsonify(erreur="Aucun chemin possible (départ/arrivée infranchissable ou isolés)"), 404
-    res = r["res"]
-    if mode == "alternatif" and r["alternatif"]:
-        res = {**res, "chemin": r["alternatif"]["chemin"], "cout_total": r["alternatif"]["cout_total"]}
+    t = META["taille_cellule_m"]
+    x0, y0 = META["origine_xy"]
     return jsonify(
-        chemin=[list(c) for c in res["chemin"]],
-        distance_m=round(r["dist"]), temps_min=round(r["duree"], 1), conso_pct=round(r["conso"], 1),
-        faisable=r["faisable"], causes=r["causes"], confiance_basse=res["confiance_basse"],
-        cout_total=round(res["cout_total"], 2), meteo=r["meteo"],
+        hauteur=H, largeur=W, taille_cellule_m=t, demo=MODE_DEMO,
+        lat0=math.degrees(y0 / RAYON_MARS_M), lon0=math.degrees(x0 / RAYON_MARS_M),   # coin haut-gauche
+        dlat=math.degrees(t / RAYON_MARS_M), dlon=math.degrees(t / RAYON_MARS_M),     # degres par cellule
     )
+
+
+# ------------------------------------------------------------------ Etat : reglages, abris, rapports
+@app.get("/api/etat")
+def etat():
+    return jsonify(lire_etat())
+
+
+@app.put("/api/reglages")
+def maj_reglages():
+    d = request.get_json()
+    try:
+        air, auto = float(d["air_bonbonne_kg"]), float(d["autonomie_rover_km"])
+        if air <= 0 or auto <= 0:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        return jsonify(erreur="Valeurs positives attendues"), 400
+    e = lire_etat()
+    e["reglages"] = {"air_bonbonne_kg": air, "autonomie_rover_km": auto}
+    ecrire_etat(e)
+    return jsonify(e["reglages"])
+
+
+@app.post("/api/abris")
+def ajouter_abri():
+    d = request.get_json()
+    try:
+        lat, lon = float(d["lat"]), float(d["lon"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify(erreur="Coordonnées invalides"), 400
+    if latlon_vers_cellule(lat, lon, META) is None:
+        return jsonify(erreur="Point hors de la zone cartographiée"), 400
+    e = lire_etat()
+    e["abris"].append({"nom": d.get("nom") or f"Abri {len(e['abris']) + 1}", "lat": lat, "lon": lon})
+    ecrire_etat(e)
+    return jsonify(e["abris"])
+
+
+@app.delete("/api/abris/<int:k>")
+def supprimer_abri(k):
+    e = lire_etat()
+    if not 0 <= k < len(e["abris"]):
+        return jsonify(erreur="Abri introuvable"), 404
+    e["abris"].pop(k)
+    ecrire_etat(e)
+    return jsonify(e["abris"])
+
+
+@app.post("/api/rapports")
+def ajouter_rapport():
+    d = request.get_json()
+    texte = (d.get("texte") or "").strip()
+    if not texte:
+        return jsonify(erreur="Rapport vide"), 400
+    e = lire_etat()
+    e["rapports"].insert(0, {"titre": (d.get("titre") or "").strip(), "texte": texte,
+                             "date": datetime.now().strftime("%d/%m/%Y %H:%M")})
+    ecrire_etat(e)
+    return jsonify(e["rapports"])
 
 
 if __name__ == "__main__":

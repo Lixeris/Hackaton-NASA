@@ -1,58 +1,40 @@
 import math
 
-# ---- Seuils de faisabilite par profil (contraintes dures) ----
+# ---- Seuils de pente (contraintes dures) ----
 
 def pente_max(profil):
-    
-    base = 30 if profil["rover"] else 20
-    poids_effectif = profil["poids_kg"] * (0.3 if profil["rover"] else 1.0)
-    penalite_poids = 0.05 * poids_effectif
-    return max(base - penalite_poids, 5)
+    return 30 if profil["rover"] else 20
 
 
-def marge_securite(profil):
-    return 3 if profil["rover"] else 1
+# ---- Vitesse et duree ----
+
+VITESSE_PIETON_M_MIN = 55    # m/min, a calibrer avec le groupe Donnees
+VITESSE_ROVER_M_MIN = 160
 
 
-# ---- Vitesse et consommation ----
-
-VITESSE_BASE_PIETON_M_MIN = 55  # m/min, valeur de depart a calibrer avec le groupe Donnees
-VITESSE_BASE_ROVER_M_MIN = 160
-
-def vitesse_groupe(profil):
-    vitesse_base = VITESSE_BASE_ROVER_M_MIN if profil["rover"] else VITESSE_BASE_PIETON_M_MIN
-    return vitesse_base / (1 + 0.1 * (profil["nb_personnes"] - 1))
+def vitesse(profil):
+    return VITESSE_ROVER_M_MIN if profil["rover"] else VITESSE_PIETON_M_MIN
 
 
 def temps_total_minutes(distance_m, profil):
-    distance_totale = distance_m * 2 if profil.get("type_trajet") == "aller_retour" else distance_m
-    return distance_totale / vitesse_groupe(profil)
+    return distance_m / vitesse(profil)
 
 
-TAUX_BASE_CONSO_PCT_MIN = 1.0 
+# ---- Air : un astronaute consomme 60 g d'air par heure ----
+
+CONSO_AIR_KG_H = 0.06
 
 
-def consommation_estimee_pct(distance_m, profil):
-    taux = TAUX_BASE_CONSO_PCT_MIN * (1 + 0.005 * profil["poids_kg"]) * (0.8 if profil["rover"] else 1.0)
-    return taux * temps_total_minutes(distance_m, profil)
+def bonbonnes_necessaires(temps_min, air_bonbonne_kg):
+    return math.ceil(temps_min / 60 * CONSO_AIR_KG_H / air_bonbonne_kg)
 
 
-# ---- Faisabilite (ressources + temps impose) ----
+# ---- Faisabilite : uniquement le rover (distance vs autonomie sans recharge) ----
 
-def est_faisable(distance_m, profil, marge=0.15):
-    causes = []
-    conso = consommation_estimee_pct(distance_m, profil)
-    ressources_dispo = min(profil.get("oxygene_pct", 100), profil.get("batterie_pct", 100))
-    if conso > ressources_dispo * (1 - marge):
-        causes.append("ressources")
-
-    temps_max = profil.get("temps_max_minutes")
-    if temps_max:
-        temps_estime = temps_total_minutes(distance_m, profil)
-        if temps_estime > temps_max * (1 - marge):
-            causes.append("temps")
-
-    return (len(causes) == 0), causes
+def est_faisable(distance_m, profil, autonomie_km):
+    if profil["rover"] and distance_m / 1000 > autonomie_km:
+        return False, ["autonomie"]
+    return True, []
 
 
 # ---- Cout A* ----
@@ -61,12 +43,9 @@ W_RISQUE = 0.7
 W_PENTE = 0.3
 
 
-def cout_cellule(cell, profil, facteur_horaire=1.0, mode="normal"):
+def cout_cellule(cell, profil, facteur_horaire=1.0):
     p_max = pente_max(profil)
     if cell["pente_deg"] > p_max:
         return math.inf
     risque_reel = cell["risque_terrain"] * facteur_horaire
-    cout = W_RISQUE * risque_reel + W_PENTE * (cell["pente_deg"] / p_max)
-    if mode == "alternatif" and cell.get("confiance") == "basse":
-        cout += 10
-    return cout
+    return W_RISQUE * risque_reel + W_PENTE * (cell["pente_deg"] / p_max)

@@ -6,111 +6,254 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
+  :root { --fond: #1c1411; --encre: #f0e2d8; --trait: #4a3a31; --accent: #ffd23c; --ko: #ff8a6b; --ok: #8be08b; }
   html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
   #app { display: flex; height: 100%; }
-  #panneau { width: 280px; padding: 14px; background: #1c1411; color: #f0e2d8; overflow-y: auto; }
-  #panneau h2 { margin: 0 0 10px; font-size: 18px; }
-  #panneau label { display: block; margin: 10px 0 2px; font-size: 13px; }
-  #panneau select, #panneau input { width: 100%; box-sizing: border-box; }
-  #panneau button { margin-top: 12px; width: 100%; padding: 8px; cursor: pointer; }
-  #resultat { margin-top: 14px; font-size: 14px; line-height: 1.5; }
-  .ko { color: #ff8a6b; } .ok { color: #8be08b; }
-  #map { flex: 1; background: #000; }
+  #panneau { width: 290px; padding: 16px; background: var(--fond); color: var(--encre); overflow-y: auto; box-sizing: border-box; }
+  #panneau h1 { margin: 0 0 14px; font-size: 18px; }
+  label { display: block; margin: 12px 0 3px; font-size: 13px; }
+  input, select, textarea, button { font: inherit; box-sizing: border-box; }
+  #panneau input, #panneau select, #vue input, #vue textarea {
+    width: 100%; padding: 6px 8px; background: #2a1f1a; color: var(--encre); border: 1px solid var(--trait); border-radius: 4px; }
+  input:focus, textarea:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #resultat { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--trait); font-size: 14px; line-height: 1.7; }
+  #resultat:empty { display: none; }
+  .ko { color: var(--ko); } .ok { color: var(--ok); }
+  #erreur { margin-top: 8px; font-size: 13px; color: var(--ko); min-height: 1em; }
+  #carte-zone { flex: 1; position: relative; }
+  #map { height: 100%; background: #000; }
+
+  #burger { position: absolute; top: 10px; right: 10px; z-index: 1100; width: 40px; height: 40px; border: 0; border-radius: 6px;
+    background: var(--fond); cursor: pointer; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 9px; }
+  #burger span { display: block; height: 2px; background: var(--encre); }
+  #menu { position: absolute; top: 56px; right: 10px; z-index: 1100; background: var(--fond); border-radius: 6px; min-width: 160px; overflow: hidden; }
+  #menu button { display: block; width: 100%; text-align: left; padding: 10px 14px; background: none; border: 0; color: var(--encre); cursor: pointer; }
+  #menu button:hover { background: #2a1f1a; }
+  #menu[hidden], #vue[hidden] { display: none; }
+
+  #vue { position: absolute; top: 56px; right: 10px; bottom: 10px; width: 340px; z-index: 1050; background: var(--fond); color: var(--encre);
+    border-radius: 6px; padding: 16px; overflow-y: auto; box-sizing: border-box; }
+  #vue h2 { margin: 0 0 12px; font-size: 17px; }
+  #vue .entete { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  #vue .entete h2 { margin: 0; }
+  #vue button.act { padding: 6px 10px; background: var(--accent); color: #1c1411; border: 0; border-radius: 4px; cursor: pointer; font-weight: 600; }
+  #vue button.sec { padding: 6px 10px; background: none; color: var(--encre); border: 1px solid var(--trait); border-radius: 4px; cursor: pointer; }
+  #vue ul { list-style: none; padding: 0; margin: 6px 0 0; }
+  #vue li { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--trait); font-size: 14px; }
+  #vue li button { background: none; border: 0; color: var(--ko); cursor: pointer; }
+  #vue details { border-bottom: 1px solid var(--trait); padding: 8px 0; }
+  #vue summary { cursor: pointer; font-size: 14px; }
+  #vue pre { white-space: pre-wrap; font: inherit; font-size: 14px; margin: 8px 0 0; }
+  #vue textarea { min-height: 240px; resize: vertical; }
+  .vide { opacity: .7; font-size: 14px; }
+  .barre { display: flex; gap: 8px; margin-top: 10px; }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="panneau">
-    <h2>Navigation Jezero</h2>
-    <div id="aide">Clique sur la carte : 1er clic = départ, 2e clic = arrivée.</div>
+    <h1>Navigation Jezero</h1>
 
-    <label>Profil</label>
-    <select id="rover"><option value="true">Rover</option><option value="false">Astronaute à pied</option></select>
-    <label>Poids transporté (kg)</label><input id="poids" type="number" value="50">
-    <label>Nombre de personnes</label><input id="nb" type="number" value="1" min="1">
-    <label>Type de trajet</label>
-    <select id="trajet"><option value="aller">Aller simple</option><option value="aller_retour">Aller-retour</option></select>
-    <label>Mode</label>
-    <select id="mode"><option value="normal">Normal</option><option value="alternatif">Alternatif (évite données peu fiables)</option></select>
-
-    <button id="btnCalc">Calculer l'itinéraire</button>
-    <button id="btnReset">Réinitialiser</button>
+    <label for="de">De :</label>
+    <input id="de" class="coord" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
+    <label for="vers">Aller à :</label>
+    <input id="vers" class="coord" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
+    <label for="profil">Profil</label>
+    <select id="profil"><option value="rover">Rover</option><option value="astronaute">Astronaute</option></select>
+    <div id="erreur"></div>
     <div id="resultat"></div>
   </div>
-  <div id="map"></div>
+
+  <div id="carte-zone">
+    <div id="map"></div>
+    <button id="burger" aria-label="Menu"><span></span><span></span><span></span></button>
+    <div id="menu" hidden>
+      <button data-vue="infos">Infos</button>
+      <button data-vue="rapports">Rapports</button>
+      <button data-vue="ressources">Ressources</button>
+    </div>
+    <div id="vue" hidden></div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-let H, W, carte, depart = null, arrivee = null, mDepart, mArrivee, trace;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-// Conversions grille (i = ligne vers le bas, j = colonne) <-> Leaflet CRS.Simple ([y vers le haut, x])
-const versLatLng = (i, j) => [H - i - 0.5, j + 0.5];
-const versCellule = (latlng) => [Math.floor(H - latlng.lat), Math.floor(latlng.lng)];
+let H, W, G, carte, etat, cible = null, trace, vueCourante = null;
+const pts = { de: null, vers: null }, marqueurs = {}, abrisLayer = L.layerGroup();
+
+// Coordonnees continues de grille (gi vers le bas, gj vers la droite) <-> lat/lon <-> Leaflet CRS.Simple
+const geoVersGrille = (lat, lon) => [(G.lat0 - lat) / G.dlat, (lon - G.lon0) / G.dlon];
+const grilleVersGeo = (gi, gj) => [G.lat0 - gi * G.dlat, G.lon0 + gj * G.dlon];
+const grilleVersLL = (gi, gj) => [H - gi, gj];
+const dansZone = (gi, gj) => gi >= 0 && gj >= 0 && gi < H && gj < W;
+
+function formatDuree(min) {
+  const t = Math.round(min), h = Math.floor(t / 60), m = t % 60;
+  return h ? `${h} h ${String(m).padStart(2, "0")} min` : `${m} min`;
+}
+const formatCoord = (lat, lon) => `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+function lireCoord(txt) {
+  const n = (txt.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  return n.length === 2 ? n : null;
+}
+const api = (url, methode = "GET", corps) => fetch(url, {
+  method: methode, headers: { "Content-Type": "application/json" }, body: corps ? JSON.stringify(corps) : undefined });
 
 async function init() {
   const info = await (await fetch("/api/info")).json();
-  H = info.hauteur; W = info.largeur;
+  H = info.hauteur; W = info.largeur; G = info;
+  etat = await (await api("/api/etat")).json();
   carte = L.map("map", { crs: L.CRS.Simple, minZoom: -2, maxZoom: 5, zoomSnap: 0.25 });
   const bornes = [[0, 0], [H, W]];
   L.imageOverlay("/fond.png", bornes).addTo(carte);
   carte.fitBounds(bornes);
   carte.setMaxBounds([[-20, -20], [H + 20, W + 20]]);
+  abrisLayer.addTo(carte);
+  dessinerAbris();
   carte.on("click", clicCarte);
 }
 
+function dessinerAbris() {
+  abrisLayer.clearLayers();
+  etat.abris.forEach(a => {
+    const [gi, gj] = geoVersGrille(a.lat, a.lon);
+    if (!dansZone(gi, gj)) return;
+    L.circleMarker(grilleVersLL(gi, gj), { radius: 7, color: "#ffa21f", fillColor: "#ffa21f", fillOpacity: .9, weight: 2 })
+      .bindTooltip(`${esc(a.nom)} (${formatCoord(a.lat, a.lon)})`).addTo(abrisLayer);
+  });
+}
+
+// ---- Saisie des coordonnees : taper, ou cliquer dans le champ puis sur la carte
+document.addEventListener("focusin", e => { cible = e.target.classList?.contains("coord") ? e.target : cible; });
+
 function clicCarte(e) {
-  const [i, j] = versCellule(e.latlng);
-  if (i < 0 || j < 0 || i >= H || j >= W) return;
-  if (!depart || (depart && arrivee)) {            // nouveau trajet
-    reset();
-    depart = [i, j];
-    mDepart = L.circleMarker(versLatLng(i, j), { radius: 7, color: "#4aa3ff", fillOpacity: 1 }).addTo(carte).bindTooltip("Départ");
+  const gi = H - e.latlng.lat, gj = e.latlng.lng;
+  if (!dansZone(gi, gj)) return;
+  const [lat, lon] = grilleVersGeo(gi, gj);
+  const champ = cible && document.body.contains(cible) ? cible : (!$("de").value ? $("de") : !$("vers").value ? $("vers") : $("de"));
+  champ.value = formatCoord(lat, lon);
+  champ.dispatchEvent(new Event("change"));
+  cible = null;
+}
+
+function placer(cle, champ) {
+  $("erreur").textContent = "";
+  if (marqueurs[cle]) { carte.removeLayer(marqueurs[cle]); marqueurs[cle] = null; }
+  pts[cle] = null;
+  if (champ.value.trim()) {
+    const c = lireCoord(champ.value);
+    const [gi, gj] = c ? geoVersGrille(c[0], c[1]) : [-1, -1];
+    if (!c || !dansZone(gi, gj)) {
+      $("erreur").textContent = !c ? "Format attendu : lat, lon" : "Point hors de la zone cartographiée";
+    } else {
+      pts[cle] = c;
+      marqueurs[cle] = L.circleMarker(grilleVersLL(gi, gj), { radius: 7, color: cle === "de" ? "#4aa3ff" : "#ff5a3c", fillOpacity: 1 })
+        .addTo(carte).bindTooltip(cle === "de" ? "Départ" : "Arrivée");
+    }
+  }
+  calculer();
+}
+$("de").onchange = () => placer("de", $("de"));
+$("vers").onchange = () => placer("vers", $("vers"));
+$("profil").onchange = calculer;
+
+let numCalcul = 0;
+async function calculer() {
+  const out = $("resultat"), moi = ++numCalcul;
+  if (trace) { carte.removeLayer(trace); trace = null; }
+  if (!pts.de || !pts.vers) { out.innerHTML = ""; return; }
+  const cellule = p => geoVersGrille(p[0], p[1]).map(x => Math.floor(x));
+  out.textContent = "Calcul…";
+  const ctrl = new AbortController(), minuteur = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const rep = await fetch("/api/route", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+      body: JSON.stringify({ depart: cellule(pts.de), arrivee: cellule(pts.vers), profil: { rover: $("profil").value === "rover" } }) });
+    const texte = await rep.text();
+    if (moi !== numCalcul) return;                       // une requête plus récente a pris le relais
+    let d; try { d = JSON.parse(texte); } catch { d = null; }
+    if (!rep.ok || !d) { out.innerHTML = `<span class="ko">${esc(d?.erreur || "Erreur serveur (" + rep.status + "), voir la console Flask")}</span>`; return; }
+    trace = L.polyline(d.chemin.map(([i, j]) => grilleVersLL(i + .5, j + .5)),
+      { color: d.faisable ? "#ffd23c" : "#ff5a3c", weight: 4 }).addTo(carte);
+    out.innerHTML = `
+      Distance : <b>${(d.distance_m / 1000).toFixed(1)} km</b><br>
+      Temps de trajet : <b>${formatDuree(d.temps_min)}</b><br>
+      Bonbonnes de gaz : <b>${d.bonbonnes}</b>
+      ${d.faisable ? "" : `<br><b class="ko">${esc(d.message)}</b>`}`;
+  } catch (err) {
+    if (moi === numCalcul) out.innerHTML = `<span class="ko">${err.name === "AbortError" ? "Calcul trop long (plus de 60 s)" : "Serveur injoignable"}</span>`;
+  } finally { clearTimeout(minuteur); }
+}
+
+// ---- Menu déroulant et vues
+$("burger").onclick = () => { $("menu").hidden = !$("menu").hidden; };
+$("menu").onclick = e => { const v = e.target.dataset.vue; if (v) ouvrir(v); };
+
+function ouvrir(nom) {
+  $("menu").hidden = true; vueCourante = nom;
+  const vue = $("vue"); vue.hidden = false; cible = null;
+  const fermer = `<button class="sec" onclick="fermer()">Fermer</button>`;
+  if (nom === "infos") {
+    const r = etat.reglages;
+    vue.innerHTML = `
+      <div class="entete"><h2>Infos</h2>${fermer}</div>
+      <label for="air">Quantité d'air par bonbonne (kg) :</label>
+      <input id="air" type="number" step="0.01" min="0.01" value="${r.air_bonbonne_kg}" onchange="sauverReglages()">
+      <label for="auto">Autonomie du rover sans recharge (km) :</label>
+      <input id="auto" type="number" step="1" min="1" value="${r.autonomie_rover_km}" onchange="sauverReglages()">
+      <label>Abris</label>
+      <ul>${etat.abris.map((a, k) => `<li><span>${esc(a.nom)} : ${formatCoord(a.lat, a.lon)}</span>
+        <button onclick="supprimerAbri(${k})" aria-label="Supprimer ${esc(a.nom)}">✕</button></li>`).join("") || '<li class="vide">Aucun abri</li>'}</ul>
+      <label for="nabri">Nouvel abri :</label>
+      <input id="nabri" class="coord" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
+      <div class="barre"><button class="act" onclick="ajouterAbri()">Ajouter l'abri</button></div>
+      <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>`;
+  } else if (nom === "rapports") {
+    vue.innerHTML = `
+      <div class="entete"><h2>Rapports</h2><button class="act" onclick="ouvrir('nouveau')">+ Nouveau rapport</button></div>
+      ${etat.rapports.map(r => `<details><summary>${esc(r.date)}${r.titre ? " – " + esc(r.titre) : ""}</summary><pre>${esc(r.texte)}</pre></details>`).join("")
+        || '<p class="vide">Aucun rapport.</p>'}
+      <div class="barre">${fermer}</div>`;
+  } else if (nom === "nouveau") {
+    vue.innerHTML = `
+      <div class="entete"><h2>Nouveau rapport</h2></div>
+      <label for="rtitre">Titre (facultatif) :</label><input id="rtitre">
+      <label for="rtexte">Rapport :</label><textarea id="rtexte"></textarea>
+      <div class="barre"><button class="act" onclick="sauverRapport()">Enregistrer</button>
+      <button class="sec" onclick="ouvrir('rapports')">Annuler</button></div>
+      <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>`;
   } else {
-    arrivee = [i, j];
-    mArrivee = L.circleMarker(versLatLng(i, j), { radius: 7, color: "#ff5a3c", fillOpacity: 1 }).addTo(carte).bindTooltip("Arrivée");
+    vue.innerHTML = `<div class="entete"><h2>Ressources</h2>${fermer}</div><p class="vide">Rien pour le moment.</p>`;
   }
 }
+function fermer() { $("vue").hidden = true; vueCourante = null; cible = null; }
 
-function reset() {
-  [mDepart, mArrivee, trace].forEach(x => x && carte.removeLayer(x));
-  depart = arrivee = mDepart = mArrivee = trace = null;
-  document.getElementById("resultat").innerHTML = "";
+async function sauverReglages() {
+  const rep = await api("/api/reglages", "PUT", { air_bonbonne_kg: $("air").value, autonomie_rover_km: $("auto").value });
+  if (rep.ok) { etat.reglages = await rep.json(); calculer(); }
 }
-
-async function calculer() {
-  const out = document.getElementById("resultat");
-  if (!depart || !arrivee) { out.innerHTML = "<span class='ko'>Choisis un départ et une arrivée.</span>"; return; }
-  out.textContent = "Calcul…";
-  const rep = await fetch("/api/route", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      depart, arrivee,
-      mode: document.getElementById("mode").value,
-      profil: {
-        rover: document.getElementById("rover").value === "true",
-        poids_kg: parseFloat(document.getElementById("poids").value),
-        nb_personnes: parseInt(document.getElementById("nb").value),
-        type_trajet: document.getElementById("trajet").value,
-      },
-    }),
-  });
+async function ajouterAbri() {
+  const c = lireCoord($("nabri").value);
+  if (!c) { $("erreur-vue").textContent = "Format attendu : lat, lon"; return; }
+  const rep = await api("/api/abris", "POST", { lat: c[0], lon: c[1] });
   const d = await rep.json();
-  if (!rep.ok) { out.innerHTML = `<span class='ko'>${d.erreur}</span>`; return; }
-  if (trace) carte.removeLayer(trace);
-  trace = L.polyline(d.chemin.map(([i, j]) => versLatLng(i, j)), { color: d.faisable ? "#ffd23c" : "#ff5a3c", weight: 4 }).addTo(carte);
-  out.innerHTML = `
-    Distance : <b>${(d.distance_m / 1000).toFixed(1)} km</b><br>
-    Durée : <b>${d.temps_min} min</b><br>
-    Consommation : <b>${d.conso_pct} %</b><br>
-    Faisable : <b class="${d.faisable ? "ok" : "ko"}">${d.faisable ? "oui" : "non (" + d.causes.join(", ") + ")"}</b>
-    <br>Départ conseillé : <b>${d.meteo.depart}</b> (arrivée ~${d.meteo.arrivee})
-    ${d.meteo.hors_fenetre ? "<br><span class='ko'>⚠ trajet en dehors de la plage chaude de la journée</span>" : ""}
-    ${d.confiance_basse ? "<br><span class='ko'>⚠ passe par des données peu fiables</span>" : ""}`;
+  if (!rep.ok) { $("erreur-vue").textContent = d.erreur; return; }
+  etat.abris = d; dessinerAbris(); ouvrir("infos");
+}
+async function supprimerAbri(k) {
+  const rep = await api(`/api/abris/${k}`, "DELETE");
+  if (rep.ok) { etat.abris = await rep.json(); dessinerAbris(); ouvrir("infos"); }
+}
+async function sauverRapport() {
+  const rep = await api("/api/rapports", "POST", { titre: $("rtitre").value, texte: $("rtexte").value });
+  const d = await rep.json();
+  if (!rep.ok) { $("erreur-vue").textContent = d.erreur; return; }
+  etat.rapports = d; ouvrir("rapports");
 }
 
-document.getElementById("btnCalc").onclick = calculer;
-document.getElementById("btnReset").onclick = reset;
 init();
 </script>
 </body>
