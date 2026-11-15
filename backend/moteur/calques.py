@@ -7,16 +7,16 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-PENTE = [(0, (25, 55, 95)), (.5, (215, 185, 80)), (1, (215, 60, 40))]      # = fond.png (donnees_mnt.generer_fond_pente)
-RISQUE = [(0, (60, 170, 90)), (.5, (240, 210, 60)), (1, (215, 50, 40))]
+DENIVELE = [(0, (25, 55, 95)), (.5, (215, 185, 80)), (1, (215, 60, 40))]
+DANGER = [(0, (60, 170, 90)), (.5, (240, 210, 60)), (1, (215, 50, 40))]
 CONFIANCE = [(0, (215, 50, 40)), (.5, (240, 210, 60)), (1, (60, 170, 90))]
-GRIS = [(0, (0, 0, 0)), (1, (255, 255, 255))]
 
-# id, titre, fichier, type, palette, vmin, vmax, unite, (etiquette bas, etiquette haut)
+# id, titre, fichier, palette, vmin, vmax, unite, (etiquette bas, etiquette haut)
+# denivele.tif = pente en % (0-50 % affiches, au-dela = saturation) ; danger 0-1 ; confiance 0.6-1
 DEFINITIONS = [
-    ("ombrage", "Ombrage", "ombrage.tif", "fond", GRIS, 0, 255, "", ("ombre", "lumière")),
-    ("risque", "Risque", "calcul_risque.tif", "surcouche", RISQUE, 0, 1, "", ("faible", "élevé")),
-    ("confiance", "Confiance", "confiance.tif", "surcouche", CONFIANCE, 0, 1, "", ("basse", "haute")),
+    ("denivele", "Elevation change", "denivele.tif", DENIVELE, 0, 50, "%", ("flat", "steep")),
+    ("danger", "Danger zones", "danger.tif", DANGER, 0, 1, "", ("low", "high")),
+    ("confiance", "Data reliability", "confiance.tif", CONFIANCE, 0.6, 1, "", ("low", "high")),
 ]
 
 
@@ -54,29 +54,25 @@ def _legende(palette, vmin, vmax, unite, etiquettes, note=None):
             "unite": unite, "etiquettes": list(etiquettes), "note": note}
 
 
-def construire_calques(dossier_tifs, dossier_front, plage_pente=None, facteur=5):
+def construire_calques(dossier_tifs, dossier_front, facteur=5):
+    """Fond = relief ombre (frontend/fond.png, fourni tel quel) ; surcouches = denivele, danger, confiance."""
     sortie = dossier_front / "calques"
     sortie.mkdir(exist_ok=True)
     calques = []
     fond = dossier_front / "fond.png"
     if fond.exists():
-        lo, hi = plage_pente if plage_pente else (None, None)
-        calques.append({"id": "pente", "titre": "Pente", "type": "fond",
-                        "url": f"/fond.png?v={int(fond.stat().st_mtime)}",
-                        "legende": _legende(PENTE, lo, hi, "°", ("plat", "raide"),
-                                            "contraste étiré sur les percentiles 2-98" if plage_pente else None)})
-    for cid, titre, fichier, type_, palette, vmin, vmax, unite, etiq in DEFINITIONS:
+        calques.append({"id": "relief", "titre": "Relief shading", "type": "fond",
+                        "url": f"/fond.png?v={int(fond.stat().st_mtime)}", "legende": None})
+    for cid, titre, fichier, palette, vmin, vmax, unite, etiq in DEFINITIONS:
         chemin = dossier_tifs / fichier
         if not chemin.exists():
             continue
         a = _recadrer(_lire(chemin), facteur)
-        if cid == "ombrage":
-            a[a == 0] = np.nan                       # 0 = pas de donnee
         Image.fromarray(_coloriser(a, palette, vmin, vmax), "RGBA").save(sortie / f"{cid}.png")
         note = None
         if np.isfinite(a).any() and np.nanmin(a) == np.nanmax(a):
-            note = f"Calque uniforme (valeur {np.nanmin(a):g}) : export à vérifier"
-        calques.append({"id": cid, "titre": titre, "type": type_,
+            note = f"Uniform layer (value {np.nanmin(a):g}): check the export"
+        calques.append({"id": cid, "titre": titre, "type": "surcouche",
                         "url": f"/calques/{cid}.png?v={int(chemin.stat().st_mtime)}",
                         "legende": _legende(palette, vmin, vmax, unite, etiq, note)})
     return calques

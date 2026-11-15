@@ -9,7 +9,7 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-# Zone 10 km x 10 km du projet QGIS (coordonnees Mars 2000 equidistant cylindrique, en m)
+# Ancienne zone 10 km x 10 km (inutilisee : les nouveaux TIF sont deja decoupes)
 ZONE_10KM = (4583443.25, 1088613.14, 4593463.25, 1098633.14)  # xmin, ymin, xmax, ymax
 
 
@@ -166,13 +166,15 @@ def generer_fond(chemin_mnt, sortie_png, zone=ZONE_10KM, facteur=5):
     Image.fromarray((ombre * 255).astype("uint8")).save(sortie_png)
 
 
-# ---- Conversions latitude/longitude (Mars 2000, projection equidistante cylindrique, lat_ts=0, lon0=0) ----
+# ---- Conversions latitude/longitude (Mars 2000, equidistante cylindrique, parallele standard LAT_TS, lon0=0) ----
 RAYON_MARS_M = 3396190.0
+LAT_TS_DEG = 18.38                                           # parallele standard des TIF (cf. GeoTIFF)
+RAYON_X_M = RAYON_MARS_M * math.cos(math.radians(LAT_TS_DEG))  # metres par radian de longitude
 
 
 def latlon_vers_cellule(lat, lon, meta):
     """lat/lon (degres, longitude Est positive) -> (i, j), ou None si hors de la grille."""
-    x = RAYON_MARS_M * math.radians(lon)
+    x = RAYON_X_M * math.radians(lon)
     y = RAYON_MARS_M * math.radians(lat)
     x0, y0 = meta["origine_xy"]
     t = meta["taille_cellule_m"]
@@ -184,4 +186,4 @@ def latlon_vers_cellule(lat, lon, meta):
 def cellule_vers_latlon(i, j, meta):
     """Centre de la cellule (i, j) -> (lat, lon) en degres."""
     x, y = cellule_vers_xy(i, j, meta)
-    return math.degrees(y / RAYON_MARS_M), math.degrees(x / RAYON_MARS_M)
+    return math.degrees(y / RAYON_MARS_M), math.degrees(x / RAYON_X_M)

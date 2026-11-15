@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Martian Map – Navigation Jezero</title>
+<title>Martian Map – Jezero Navigation</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -74,14 +74,14 @@
 <body>
 <div id="app">
   <div id="panneau">
-    <h1>Navigation Jezero</h1>
+    <h1>Jezero Navigation</h1>
 
-    <label for="de">De :</label>
-    <input id="de" class="coord" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
-    <label for="vers">Aller à :</label>
-    <input id="vers" class="coord" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
-    <label for="profil">Profil</label>
-    <select id="profil"><option value="rover">Rover</option><option value="astronaute">Astronaute</option></select>
+    <label for="de">From:</label>
+    <input id="de" class="coord" placeholder="lat, lon or click on the map" autocomplete="off">
+    <label for="vers">To:</label>
+    <input id="vers" class="coord" placeholder="lat, lon or click on the map" autocomplete="off">
+    <label for="profil">Profile</label>
+    <select id="profil"><option value="rover">Rover</option><option value="astronaute">Astronaut</option></select>
     <div id="erreur"></div>
     <div id="resultat"></div>
   </div>
@@ -90,15 +90,15 @@
     <div id="map"></div>
     <button id="burger" aria-label="Menu"><span></span><span></span><span></span></button>
     <div id="menu" hidden>
-      <button data-vue="infos">Infos</button>
-      <button data-vue="rapports">Rapports</button>
-      <button data-vue="ressources">Ressources</button>
+      <button data-vue="infos">Info</button>
+      <button data-vue="rapports">Reports</button>
+      <button data-vue="ressources">Resources</button>
     </div>
     <div id="vue" hidden></div>
     <div id="bas-droite">
       <div id="legendes"></div>
       <div id="calques"><div id="panneau-calques" hidden></div></div>
-      <button id="btn-calques" aria-label="Calques">☰ Calques</button>
+      <button id="btn-calques" aria-label="Layers">☰ Layers</button>
       <div id="echelle"><div id="echelle-barre"></div><span id="echelle-txt"></span></div>
     </div>
   </div>
@@ -154,10 +154,10 @@ async function init() {
   // 2) Puis l'état serveur et les calques, chacun isolé
   const erreurs = [];
   try { etat = await getJSON("/api/etat"); }
-  catch (e) { console.error(e); erreurs.push("état serveur"); etat = { abris: [], rapports: [], reglages: { air_bonbonne_kg: 0.55, autonomie_rover_km: 100 } }; }
+  catch (e) { console.error(e); erreurs.push("server state"); etat = { abris: [], rapports: [], reglages: { air_bonbonne_kg: 0.55, autonomie_rover_km: 100 } }; }
   try { await initCalques(bornes); }
-  catch (e) { console.error(e); erreurs.push("calques"); couches.secours = L.imageOverlay("/fond.png", bornes, { pane: "fonds" }).addTo(carte); }
-  if (erreurs.length) $("erreur").textContent = "Can't load : " + erreurs.join(", ") + ;
+  catch (e) { console.error(e); erreurs.push("layers"); couches.secours = L.imageOverlay("/fond.png", bornes, { pane: "fonds" }).addTo(carte); }
+  if (erreurs.length) $("erreur").textContent = "Can't load: " + erreurs.join(", ");
   abrisLayer.addTo(carte);
   rapportsLayer.addTo(carte);
   dessinerAbris();
@@ -188,14 +188,14 @@ async function initCalques(bornes) {
 function rendreCalques() {
   const fonds = calquesInfo.filter(c => c.type === "fond"), sur = calquesInfo.filter(c => c.type === "surcouche");
   $("panneau-calques").innerHTML = `
-    <b>Fond</b>
+    <b>Background</b>
     ${fonds.map(c => `<label><input class="case" type="radio" name="fond" value="${c.id}" ${c.id === fondActif ? "checked" : ""}> ${esc(c.titre)}</label>`).join("")}
-    <label><input class="case" type="radio" name="fond" value="" ${fondActif ? "" : "checked"}> Aucun</label>
-    ${sur.length ? "<b>Superpositions</b>" + sur.map(c => `<div><label><input class="case" type="checkbox" data-sur="${c.id}"> ${esc(c.titre)}</label>
-      <input type="range" min="0" max="100" value="60" data-op="${c.id}" aria-label="Opacité ${esc(c.titre)}"></div>`).join("") : ""}
-    <b>Marqueurs</b>
-    <label><input class="case" type="checkbox" data-aff="abris" checked> <i class="pt" style="background:#ffa21f"></i> Abris</label>
-    <label><input class="case" type="checkbox" data-aff="rapports" checked> <i class="pt" style="background:#b06cff"></i> Rapports</label>`;
+    <label><input class="case" type="radio" name="fond" value="" ${fondActif ? "" : "checked"}> None</label>
+    ${sur.length ? "<b>Overlays</b>" + sur.map(c => `<div><label><input class="case" type="checkbox" data-sur="${c.id}"> ${esc(c.titre)}</label>
+      <input type="range" min="0" max="100" value="60" data-op="${c.id}" aria-label="Opacity ${esc(c.titre)}"></div>`).join("") : ""}
+    <b>Markers</b>
+    <label><input class="case" type="checkbox" data-aff="abris" checked> <i class="pt" style="background:#ffa21f"></i> Shelters</label>
+    <label><input class="case" type="checkbox" data-aff="rapports" checked> <i class="pt" style="background:#b06cff"></i> Reports</label>`;
 }
 $("btn-calques").onclick = () => { $("panneau-calques").hidden = !$("panneau-calques").hidden; };
 $("panneau-calques").addEventListener("change", e => {
@@ -221,7 +221,7 @@ function appliquerAffichage() {
 }
 
 function majLegendes() {
-  const actifs = [fondActif, ...surActives].filter(Boolean).map(id => calquesInfo.find(c => c.id === id));
+  const actifs = [fondActif, ...surActives].filter(Boolean).map(id => calquesInfo.find(c => c.id === id)).filter(c => c && c.legende);
   $("legendes").innerHTML = actifs.map(c => {
     const l = c.legende, degrade = l.stops.map(([p, col]) => `${col} ${p * 100}%`).join(", ");
     const val = x => x == null ? "" : `${+Number(x).toFixed(2)}${l.unite} `;
@@ -249,7 +249,7 @@ function dessinerRapports() {
     if (!dansZone(gi, gj)) return;
     const extrait = esc(r.texte.slice(0, 300)) + (r.texte.length > 300 ? "…" : "");
     rapportMarqueurs[r.id] = L.circleMarker(grilleVersLL(gi, gj), { radius: 7, color: "#fff", weight: 2, fillColor: "#b06cff", fillOpacity: 1 })
-      .bindPopup(`<b>${esc(r.titre || "Rapport")}</b><br><small>${esc(r.date)}</small><div style="white-space:pre-wrap;margin-top:4px">${extrait}</div>`)
+      .bindPopup(`<b>${esc(r.titre || "Report")}</b><br><small>${esc(r.date)}</small><div style="white-space:pre-wrap;margin-top:4px">${extrait}</div>`)
       .addTo(rapportsLayer);
   });
 }
@@ -275,11 +275,11 @@ function placer(cle, champ) {
     const c = lireCoord(champ.value);
     const [gi, gj] = c ? geoVersGrille(c[0], c[1]) : [-1, -1];
     if (!c || !dansZone(gi, gj)) {
-      $("erreur").textContent = !c ? "Please enter the location as : lat, lon" : "The location selected is out ouf the bounds of the map";
+      $("erreur").textContent = !c ? "Please enter the location as: lat, lon" : "The selected location is outside the map bounds";
     } else {
       pts[cle] = c;
       marqueurs[cle] = L.circleMarker(grilleVersLL(gi, gj), { radius: 7, color: cle === "de" ? "#4aa3ff" : "#ff5a3c", fillOpacity: 1 })
-        .addTo(carte).bindTooltip(cle === "de" ? "Départ" : "Arrivée");
+        .addTo(carte).bindTooltip(cle === "de" ? "Start" : "Destination");
     }
   }
   calculer();
@@ -294,7 +294,7 @@ async function calculer() {
   if (trace) { carte.removeLayer(trace); trace = null; }
   if (!pts.de || !pts.vers) { out.innerHTML = ""; return; }
   const cellule = p => geoVersGrille(p[0], p[1]).map(x => Math.floor(x));
-  out.textContent = "Calcul…";
+  out.textContent = "Computing…";
   const ctrl = new AbortController(), minuteur = setTimeout(() => ctrl.abort(), 60000);
   try {
     const rep = await fetch("/api/route", {
@@ -303,24 +303,24 @@ async function calculer() {
     const texte = await rep.text();
     if (moi !== numCalcul) return;                      
     let d; try { d = JSON.parse(texte); } catch { d = null; }
-    if (!rep.ok || !d) { out.innerHTML = `<span class="ko">${esc(d?.erreur || "Erreur serveur (" + rep.status + "), voir la console Flask")}</span>`; return; }
+    if (!rep.ok || !d) { out.innerHTML = `<span class="ko">${esc(d?.erreur || "Server error (" + rep.status + "), see the Flask console")}</span>`; return; }
     const etapes = d.etapes || [];
     trace = L.featureGroup([L.polyline(d.chemin.map(([i, j]) => grilleVersLL(i + .5, j + .5)),
       { color: d.faisable ? "#ffd23c" : "#ff5a3c", weight: 4 })]);
     etapes.forEach(a => {                                // abris où le rover se recharge
       const [gi, gj] = geoVersGrille(a.lat, a.lon);
       L.circleMarker(grilleVersLL(gi, gj), { radius: 10, color: "#fff", weight: 3, fillColor: "#ffa21f", fillOpacity: 1 })
-        .bindTooltip(`Recharge : ${esc(a.nom)}`).addTo(trace);
+        .bindTooltip(`Recharge: ${esc(a.nom)}`).addTo(trace);
     });
     trace.addTo(carte);
     out.innerHTML = `
-      Distance : <b>${(d.distance_m / 1000).toFixed(1)} km</b><br>
-      Temps de trajet : <b>${formatDuree(d.temps_min)}</b><br>
-      Bonbonnes de gaz : <b>${d.bonbonnes}</b>
-      ${etapes.length ? `<br>Recharge aux abris : <b class="ok">${etapes.map(a => esc(a.nom)).join(" → ")}</b>` : ""}
+      Distance: <b>${(d.distance_m / 1000).toFixed(1)} km</b><br>
+      Travel time: <b>${formatDuree(d.temps_min)}</b><br>
+      Air tanks: <b>${d.bonbonnes}</b>
+      ${etapes.length ? `<br>Recharge at shelters: <b class="ok">${etapes.map(a => esc(a.nom)).join(" → ")}</b>` : ""}
       ${d.faisable ? "" : `<br><b class="ko">${esc(d.message)}</b>`}`;
   } catch (err) {
-    if (moi === numCalcul) out.innerHTML = `<span class="ko">${err.name === "AbortError" ? "Calcul trop long (plus de 60 s)" : "Serveur injoignable"}</span>`;
+    if (moi === numCalcul) out.innerHTML = `<span class="ko">${err.name === "AbortError" ? "Computation too long (over 60 s)" : "Server unreachable"}</span>`;
   } finally { clearTimeout(minuteur); }
 }
 
@@ -331,49 +331,49 @@ $("menu").onclick = e => { const v = e.target.dataset.vue; if (v) ouvrir(v); };
 function ouvrir(nom) {
   $("menu").hidden = true; vueCourante = nom;
   const vue = $("vue"); vue.hidden = false; cible = null; document.body.classList.add("vue-ouverte");
-  const fermer = `<button class="sec" onclick="fermer()">Fermer</button>`;
+  const fermer = `<button class="sec" onclick="fermer()">Close</button>`;
   if (nom === "infos") {
     const r = etat.reglages;
     vue.innerHTML = `
-      <div class="entete"><h2>Infos</h2>${fermer}</div>
-      <label for="air">Quantité d'air par bonbonne (kg) :</label>
+      <div class="entete"><h2>Info</h2>${fermer}</div>
+      <label for="air">Air per tank (kg):</label>
       <input id="air" type="number" step="0.01" min="0.01" value="${r.air_bonbonne_kg}" onchange="sauverReglages()">
-      <label for="auto">Autonomie du rover sans recharge (km) :</label>
+      <label for="auto">Rover range without recharging (km):</label>
       <input id="auto" type="number" step="1" min="1" value="${r.autonomie_rover_km}" onchange="sauverReglages()">
-      <label>Abris</label>
+      <label>Shelters</label>
       <ul>${etat.abris.map((a, k) => `<li><span>${esc(a.nom)} : ${formatCoord(a.lat, a.lon)}</span>
-        <button onclick="supprimerAbri(${k})" aria-label="Supprimer ${esc(a.nom)}">✕</button></li>`).join("") || '<li class="vide">Aucun abri</li>'}</ul>
-      <label for="nabri">Nouvel abri :</label>
-      <input id="nabri" class="coord" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
-      <div class="barre"><button class="act" onclick="ajouterAbri()">Ajouter l'abri</button></div>
+        <button onclick="supprimerAbri(${k})" aria-label="Delete ${esc(a.nom)}">✕</button></li>`).join("") || '<li class="vide">No shelters</li>'}</ul>
+      <label for="nabri">New shelter:</label>
+      <input id="nabri" class="coord" placeholder="lat, lon or click on the map" autocomplete="off">
+      <div class="barre"><button class="act" onclick="ajouterAbri()">Add shelter</button></div>
       <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>`;
   } else if (nom === "rapports") {
     vue.innerHTML = `
-      <div class="entete"><h2>Rapports</h2><button class="act" onclick="ouvrir('nouveau')">+ Nouveau rapport</button></div>
+      <div class="entete"><h2>Reports</h2><button class="act" onclick="ouvrir('nouveau')">+ New report</button></div>
       ${etat.rapports.map(r => {
         const pos = r.lat != null;
         return `<details ${r.id === rapportOuvert ? "open" : ""}><summary>${pos ? "📍 " : ""}${esc(r.date)}${r.titre ? " – " + esc(r.titre) : ""}</summary>
           <pre>${esc(r.texte)}</pre>
-          <label><input class="case" type="checkbox" ${r.visible ? "checked" : ""} ${pos ? "" : "disabled"} onchange="basculerRapport('${r.id}', this.checked)"> Afficher sur la carte</label>
-          <label for="pos-${r.id}" style="display:block;margin-top:8px">Position :</label>
-          <input id="pos-${r.id}" class="coord" value="${pos ? formatCoord(r.lat, r.lon) : ""}" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
-          <div class="barre"><button class="sec" onclick="placerRapport('${r.id}')">Placer</button>
-          ${pos ? `<button class="sec" onclick="centrerRapport('${r.id}')">Voir sur la carte</button>` : ""}</div></details>`;
-      }).join("") || '<p class="vide">Aucun rapport.</p>'}
+          <label><input class="case" type="checkbox" ${r.visible ? "checked" : ""} ${pos ? "" : "disabled"} onchange="basculerRapport('${r.id}', this.checked)"> Show on map</label>
+          <label for="pos-${r.id}" style="display:block;margin-top:8px">Position:</label>
+          <input id="pos-${r.id}" class="coord" value="${pos ? formatCoord(r.lat, r.lon) : ""}" placeholder="lat, lon or click on the map" autocomplete="off">
+          <div class="barre"><button class="sec" onclick="placerRapport('${r.id}')">Place</button>
+          ${pos ? `<button class="sec" onclick="centrerRapport('${r.id}')">View on map</button>` : ""}</div></details>`;
+      }).join("") || '<p class="vide">No reports.</p>'}
       <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>
       <div class="barre">${fermer}</div>`;
   } else if (nom === "nouveau") {
     vue.innerHTML = `
-      <div class="entete"><h2>Nouveau rapport</h2></div>
-      <label for="rtitre">Titre (facultatif) :</label><input id="rtitre">
-      <label for="rtexte">Rapport :</label><textarea id="rtexte"></textarea>
-      <label for="rpos">Position (facultatif) :</label>
-      <input id="rpos" class="coord" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
-      <div class="barre"><button class="act" onclick="sauverRapport()">Enregistrer</button>
-      <button class="sec" onclick="ouvrir('rapports')">Annuler</button></div>
+      <div class="entete"><h2>New report</h2></div>
+      <label for="rtitre">Title (optional):</label><input id="rtitre">
+      <label for="rtexte">Report:</label><textarea id="rtexte"></textarea>
+      <label for="rpos">Position (optional):</label>
+      <input id="rpos" class="coord" placeholder="lat, lon or click on the map" autocomplete="off">
+      <div class="barre"><button class="act" onclick="sauverRapport()">Save</button>
+      <button class="sec" onclick="ouvrir('rapports')">Cancel</button></div>
       <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>`;
   } else {
-    vue.innerHTML = `<div class="entete"><h2>Ressources</h2>${fermer}</div><p class="vide">Rien pour le moment.</p>`;
+    vue.innerHTML = `<div class="entete"><h2>Resources</h2>${fermer}</div><p class="vide">Nothing yet.</p>`;
   }
 }
 function fermer() { $("vue").hidden = true; vueCourante = null; cible = null; document.body.classList.remove("vue-ouverte"); }
@@ -384,7 +384,7 @@ async function sauverReglages() {
 }
 async function ajouterAbri() {
   const c = lireCoord($("nabri").value);
-  if (!c) { $("erreur-vue").textContent = "Format attendu : lat, lon"; return; }
+  if (!c) { $("erreur-vue").textContent = "Expected format: lat, lon"; return; }
   const rep = await api("/api/abris", "POST", { lat: c[0], lon: c[1] });
   const d = await rep.json();
   if (!rep.ok) { $("erreur-vue").textContent = d.erreur; return; }
@@ -398,7 +398,7 @@ async function sauverRapport() {
   const corps = { titre: $("rtitre").value, texte: $("rtexte").value };
   if ($("rpos").value.trim()) {
     const c = lireCoord($("rpos").value);
-    if (!c) { $("erreur-vue").textContent = "Format attendu : lat, lon"; return; }
+    if (!c) { $("erreur-vue").textContent = "Expected format: lat, lon"; return; }
     corps.lat = c[0]; corps.lon = c[1];
   }
   const rep = await api("/api/rapports", "POST", corps);
@@ -412,7 +412,7 @@ async function basculerRapport(id, visible) {
 }
 async function placerRapport(id) {
   const txt = $("pos-" + id).value.trim(), c = txt ? lireCoord(txt) : null;
-  if (txt && !c) { $("erreur-vue").textContent = "Format attendu : lat, lon"; return; }
+  if (txt && !c) { $("erreur-vue").textContent = "Expected format: lat, lon"; return; }
   const rep = await api(`/api/rapports/${id}`, "PATCH", c ? { lat: c[0], lon: c[1] } : { lat: null, lon: null });
   const d = await rep.json();
   if (!rep.ok) { $("erreur-vue").textContent = d.erreur; return; }

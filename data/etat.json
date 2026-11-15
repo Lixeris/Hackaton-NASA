@@ -18,6 +18,26 @@
       "nom": "Abri 3",
       "lat": 18.4,
       "lon": 77.45
+    },
+    {
+      "nom": "Shelter 4",
+      "lat": 18.45386,
+      "lon": 77.88124
+    },
+    {
+      "nom": "Shelter 5",
+      "lat": 18.72069,
+      "lon": 77.50303
+    },
+    {
+      "nom": "Shelter 6",
+      "lat": 18.83992,
+      "lon": 77.3341
+    },
+    {
+      "nom": "Shelter 7",
+      "lat": 18.41412,
+      "lon": 77.69737
     }
   ],
   "rapports": [
@@ -35,8 +55,8 @@
       "texte": "ouqubefjnfdobbp",
       "date": "15/11/2026 10:49",
       "id": "e4dcb3df",
-      "lat": null,
-      "lon": null,
+      "lat": 18.62418,
+      "lon": 77.89768,
       "visible": false
     },
     {

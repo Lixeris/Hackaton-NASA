@@ -9,30 +9,26 @@ from flask import Flask, jsonify, request
 from moteur.calques import construire_calques
 from moteur.astar_engine import calculer_chemin, grille_factice
 from moteur.cost import bonbonnes_necessaires, est_faisable, temps_total_minutes
-from moteur.donnees_mnt import (RAYON_MARS_M, cellule_vers_latlon, generer_fond_pente,
+from moteur.donnees_mnt import (RAYON_MARS_M, RAYON_X_M, cellule_vers_latlon,
                                 grille_depuis_pente, latlon_vers_cellule, longueur_chemin_m)
 
 RACINE = Path(__file__).resolve().parent.parent
 FRONTEND = RACINE / "frontend"
 TIFS = RACINE / "tifs"
-PENTE = TIFS / "pente.tif"
+DENIVELE = TIFS / "denivele.tif"      # remplace pente.tif (pente en %)
+UNITE_DENIVELE = "pct"                  # "pct" = pourcentage de pente, "deg" = degres
 FICHIER_ETAT = RACINE / "data" / "etat.json"
 
 app = Flask(__name__, static_folder=str(FRONTEND), static_url_path="")
 
-# Charge UNE fois au demarrage
+# Charge UNE fois au demarrage. Le fond de carte est frontend/fond.png (relief ombre fourni, non regenere).
 try:
-    GRILLE, TAILLE, META = grille_depuis_pente(str(PENTE))
-    MODE_DEMO = False
-    PENTE_RANGE = generer_fond_pente(str(PENTE), str(FRONTEND / "fond.png"))
+    GRILLE, TAILLE, META = grille_depuis_pente(str(DENIVELE), unite=UNITE_DENIVELE)
 except FileNotFoundError:
-    print("Rasternot found")
-    #GRILLE, TAILLE = grille_factice(100)
-    #META = {"taille_cellule_m": 100.0, "shape": (100, 100), "origine_xy": (4583443.25, 1098633.14)}
-    #MODE_DEMO = True
-    #PENTE_RANGE = None
+    raise SystemExit(f"Raster introuvable : {DENIVELE}")
+MODE_DEMO = False
 H, W = META["shape"]
-CALQUES = construire_calques(TIFS, FRONTEND, PENTE_RANGE)   # PNG regeneres a chaque demarrage
+CALQUES = construire_calques(TIFS, FRONTEND)   # PNG regeneres a chaque demarrage
 
 
 # ------------------------------------------------------------------ Etat serveur (abris, reglages, rapports)
@@ -40,9 +36,9 @@ ETAT_DEFAUT = {
     "reglages": {"air_bonbonne_kg": 0.55, "autonomie_rover_km": 100},
     
     "abris": [
-        {"nom": "Abri 1", "lat": 18.50, "lon": 77.35},
-        {"nom": "Abri 2", "lat": 18.45, "lon": 77.40},
-        {"nom": "Abri 3", "lat": 18.40, "lon": 77.45},
+        {"nom": "Shelter 1", "lat": 18.50, "lon": 77.35},
+        {"nom": "Shelter 2", "lat": 18.45, "lon": 77.40},
+        {"nom": "Shelter 3", "lat": 18.40, "lon": 77.45},
     ],
     "rapports": [],
 }
@@ -153,9 +149,9 @@ def _reponse(r):
     chemin = r["res"]["chemin"]
     etapes = r.get("etapes", [])
     if r["faisable"]:
-        message = f"route passing by the flollowing shelters : {', '.join(e['nom'] for e in etapes)}" if etapes else None
+        message = f"Route via the following shelters: {', '.join(e['nom'] for e in etapes)}" if etapes else None
     else:
-        message = "WARNING : undoable route"
+        message = "WARNING: route not feasible"
     return dict(
         chemin=[list(c) for c in chemin],
         chemin_latlon=[list(cellule_vers_latlon(i, j, META)) for i, j in chemin],
@@ -170,10 +166,10 @@ def route():
     depart = latlon_vers_cellule(**data["depart"], meta=META)
     arrivee = latlon_vers_cellule(**data["arrivee"], meta=META)
     if depart is None or arrivee is None:
-        return jsonify(faisable=False, message="Point hors de la zone cartographiee"), 400
+        return jsonify(faisable=False, message="Point outside the mapped area"), 400
     r = resoudre(depart, arrivee, data.get("profil", {}))
     if r is None:
-        return jsonify(faisable=False, message="Aucun chemin trouve")
+        return jsonify(faisable=False, message="No path found")
     return jsonify(_reponse(r))
 
 
@@ -182,7 +178,7 @@ def api_route():
     d = request.get_json()
     r = resoudre(tuple(d["depart"]), tuple(d["arrivee"]), d.get("profil", {}))
     if r is None:
-        return jsonify(erreur="Aucun chemin possible (départ/arrivée infranchissable ou isolés)"), 404
+        return jsonify(erreur="No path possible (start/end impassable or isolated)"), 404
     return jsonify(_reponse(r))
 
 
@@ -198,8 +194,8 @@ def info():
     x0, y0 = META["origine_xy"]
     return jsonify(
         hauteur=H, largeur=W, taille_cellule_m=t, demo=MODE_DEMO,
-        lat0=math.degrees(y0 / RAYON_MARS_M), lon0=math.degrees(x0 / RAYON_MARS_M),   # coin haut-gauche
-        dlat=math.degrees(t / RAYON_MARS_M), dlon=math.degrees(t / RAYON_MARS_M),     # degres par cellule
+        lat0=math.degrees(y0 / RAYON_MARS_M), lon0=math.degrees(x0 / RAYON_X_M),      # coin haut-gauche
+        dlat=math.degrees(t / RAYON_MARS_M), dlon=math.degrees(t / RAYON_X_M),        # degres par cellule
     )
 
 
@@ -222,7 +218,7 @@ def maj_reglages():
         if air <= 0 or auto <= 0:
             raise ValueError
     except (KeyError, TypeError, ValueError):
-        return jsonify(erreur="Valeurs positives attendues"), 400
+        return jsonify(erreur="Positive values expected"), 400
     e = lire_etat()
     e["reglages"] = {"air_bonbonne_kg": air, "autonomie_rover_km": auto}
     ecrire_etat(e)
@@ -235,11 +231,11 @@ def ajouter_abri():
     try:
         lat, lon = float(d["lat"]), float(d["lon"])
     except (KeyError, TypeError, ValueError):
-        return jsonify(erreur="Coordonnées invalides"), 400
+        return jsonify(erreur="Invalid coordinates"), 400
     if latlon_vers_cellule(lat, lon, META) is None:
-        return jsonify(erreur="Point hors de la zone cartographiée"), 400
+        return jsonify(erreur="Point outside the mapped area"), 400
     e = lire_etat()
-    e["abris"].append({"nom": d.get("nom") or f"Abri {len(e['abris']) + 1}", "lat": lat, "lon": lon})
+    e["abris"].append({"nom": d.get("nom") or f"Shelter {len(e['abris']) + 1}", "lat": lat, "lon": lon})
     ecrire_etat(e)
     return jsonify(e["abris"])
 
@@ -248,7 +244,7 @@ def ajouter_abri():
 def supprimer_abri(k):
     e = lire_etat()
     if not 0 <= k < len(e["abris"]):
-        return jsonify(erreur="Abri introuvable"), 404
+        return jsonify(erreur="Shelter not found"), 404
     e["abris"].pop(k)
     ecrire_etat(e)
     return jsonify(e["abris"])
@@ -269,14 +265,14 @@ def ajouter_rapport():
     d = request.get_json()
     texte = (d.get("texte") or "").strip()
     if not texte:
-        return jsonify(erreur="Rapport vide"), 400
+        return jsonify(erreur="Empty report"), 400
     try:
         pos = _position(d)
     except (TypeError, ValueError):
-        return jsonify(erreur="Position invalide ou hors de la zone cartographiée"), 400
+        return jsonify(erreur="Invalid position or outside the mapped area"), 400
     e = lire_etat()
     e["rapports"].insert(0, {"id": uuid.uuid4().hex[:8], "titre": (d.get("titre") or "").strip(), "texte": texte,
-                             "date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                             "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                              "lat": pos[0] if pos else None, "lon": pos[1] if pos else None, "visible": pos is not None})
     ecrire_etat(e)
     return jsonify(e["rapports"])
@@ -288,7 +284,7 @@ def maj_rapport(rid):
     e = lire_etat()
     r = next((x for x in e["rapports"] if x["id"] == rid), None)
     if r is None:
-        return jsonify(erreur="Rapport introuvable"), 404
+        return jsonify(erreur="Report not found"), 404
     try:
         if "lat" in d or "lon" in d:
             pos = _position(d)
@@ -297,7 +293,7 @@ def maj_rapport(rid):
         if "visible" in d:
             r["visible"] = bool(d["visible"]) and r["lat"] is not None
     except (TypeError, ValueError):
-        return jsonify(erreur="Position invalide ou hors de la zone cartographiée"), 400
+        return jsonify(erreur="Invalid position or outside the mapped area"), 400
     ecrire_etat(e)
     return jsonify(e["rapports"])
 
