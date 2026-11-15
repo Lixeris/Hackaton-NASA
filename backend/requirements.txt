@@ -1,5 +1,4 @@
 flask
-networkx
 numpy
-marstime
-pytest
+Pillow
+gunicorn
