@@ -186,7 +186,10 @@ function dessinerAbris() {
 
 // ---- Calques (fonds + superpositions), légendes, échelle
 async function initCalques(bornes) {
-  calquesInfo = (await getJSON("/api/calques")).filter(c => c.type === "surcouche");
+  const ORDRE = ["exposition", "danger", "denivele"];   // seuls calques autorisés, dans cet ordre
+  calquesInfo = (await getJSON("/api/calques"))
+    .filter(c => c.type === "surcouche" && ORDRE.includes(c.id))
+    .sort((a, b) => ORDRE.indexOf(a.id) - ORDRE.indexOf(b.id));
   calquesInfo.forEach(c => {
     couches[c.id] = L.imageOverlay(c.url, bornes, { pane: "surcouches", opacity: 0.6 });
   });

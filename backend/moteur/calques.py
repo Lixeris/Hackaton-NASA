@@ -9,12 +9,14 @@ Image.MAX_IMAGE_PIXELS = None
 
 DENIVELE = [(0, (25, 55, 95)), (.5, (215, 185, 80)), (1, (215, 60, 40))]
 DANGER = [(0, (60, 170, 90)), (.5, (240, 210, 60)), (1, (215, 50, 40))]
+EXPOSITION = [(0, (40, 30, 90)), (.5, (190, 70, 120)), (1, (250, 220, 120))]
 
 # id, titre, fichier, palette, vmin, vmax, unite, (etiquette bas, etiquette haut)
-# denivele.tif = pente en % (0-50 % affiches, au-dela = saturation) ; danger 0-1
+# vmin/vmax = None -> echelle calculee sur les percentiles 2-98 des donnees ; un fichier absent est simplement ignore
 DEFINITIONS = [
-    ("denivele", "Elevation change", "denivele.tif", DENIVELE, 0, 50, "%", ("flat", "steep")),
-    ("danger", "Danger zones", "danger.tif", DANGER, 0, 1, "", ("low", "high")),
+    ("exposition", "Exposure", "exposition.tif", EXPOSITION, None, None, "", ("low", "high")),
+    ("danger", "Danger", "danger.tif", DANGER, None, None, "", ("low", "high")),
+    ("denivele", "Elevation", "denivele.tif", DENIVELE, 0, 50, "%", ("flat", "steep")),
 ]
 
 
@@ -53,7 +55,7 @@ def _legende(palette, vmin, vmax, unite, etiquettes, note=None):
 
 
 def construire_calques(dossier_tifs, dossier_front, facteur=5):
-    """Surcouches : denivele, danger. Le fond (frontend/fond.png) est charge directement par la page."""
+    """Surcouches : denivele, risque, exposition. Le fond (frontend/fond.png) est charge directement par la page."""
     sortie = dossier_front / "calques"
     sortie.mkdir(exist_ok=True)
     calques = []
@@ -62,6 +64,11 @@ def construire_calques(dossier_tifs, dossier_front, facteur=5):
         if not chemin.exists():
             continue
         a = _recadrer(_lire(chemin), facteur)
+        if vmin is None or vmax is None:
+            ok = a[np.isfinite(a)]
+            vmin, vmax = (float(x) for x in np.percentile(ok, [2, 98])) if ok.size else (0.0, 1.0)
+            if vmax <= vmin:
+                vmax = vmin + 1e-9
         Image.fromarray(_coloriser(a, palette, vmin, vmax), "RGBA").save(sortie / f"{cid}.png")
         note = None
         if np.isfinite(a).any() and np.nanmin(a) == np.nanmax(a):
