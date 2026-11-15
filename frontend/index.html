@@ -20,8 +20,8 @@
   #resultat:empty { display: none; }
   .ko { color: var(--ko); } .ok { color: var(--ok); }
   #erreur { margin-top: 8px; font-size: 13px; color: var(--ko); min-height: 1em; }
-  #carte-zone { flex: 1; position: relative; }
-  #map { height: 100%; background: #000; }
+  #carte-zone { flex: 1; position: relative; min-width: 0; min-height: 0; }
+  #map { position: absolute; inset: 0; background: #000; }
 
   #burger { position: absolute; top: 10px; right: 10px; z-index: 1100; width: 40px; height: 40px; border: 0; border-radius: 6px;
     background: var(--fond); cursor: pointer; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 9px; }
@@ -47,6 +47,28 @@
   #vue textarea { min-height: 240px; resize: vertical; }
   .vide { opacity: .7; font-size: 14px; }
   .barre { display: flex; gap: 8px; margin-top: 10px; }
+  #vue .case, #panneau-calques .case { width: auto; }
+  #vue details label { display: flex; gap: 6px; align-items: center; }
+
+  #bas-droite { position: absolute; right: 10px; bottom: 10px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  body.vue-ouverte #bas-droite { right: 366px; }
+  #btn-calques { padding: 8px 14px; background: var(--fond); color: var(--encre); border: 0; border-radius: 6px; cursor: pointer; }
+  #panneau-calques, .leg, #echelle { background: var(--fond); color: var(--encre); border-radius: 6px; font-size: 13px; }
+  #panneau-calques { width: 220px; padding: 10px 12px; box-sizing: border-box; }
+  #panneau-calques[hidden] { display: none; }
+  #panneau-calques b { display: block; margin: 8px 0 3px; }
+  #panneau-calques b:first-child { margin-top: 0; }
+  #panneau-calques label { display: flex; gap: 6px; align-items: center; margin: 3px 0; font-size: 13px; }
+  #panneau-calques input[type=range] { width: 100%; }
+  .pt { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  #legendes { display: flex; flex-direction: column; gap: 6px; }
+  .leg { width: 220px; padding: 8px 10px; box-sizing: border-box; }
+  .leg-t { font-weight: 600; margin-bottom: 4px; }
+  .leg-barre { height: 10px; border-radius: 2px; border: 1px solid var(--trait); }
+  .leg-l { display: flex; justify-content: space-between; margin-top: 3px; font-size: 12px; }
+  .leg-n { margin-top: 4px; font-size: 11px; color: var(--ko); }
+  #echelle { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; }
+  #echelle-barre { height: 6px; border: 2px solid var(--encre); border-top: 0; }
 </style>
 </head>
 <body>
@@ -73,6 +95,12 @@
       <button data-vue="ressources">Ressources</button>
     </div>
     <div id="vue" hidden></div>
+    <div id="bas-droite">
+      <div id="legendes"></div>
+      <div id="calques"><div id="panneau-calques" hidden></div></div>
+      <button id="btn-calques" aria-label="Calques">☰ Calques</button>
+      <div id="echelle"><div id="echelle-barre"></div><span id="echelle-txt"></span></div>
+    </div>
   </div>
 </div>
 
@@ -81,8 +109,10 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-let H, W, G, carte, etat, cible = null, trace, vueCourante = null;
-const pts = { de: null, vers: null }, marqueurs = {}, abrisLayer = L.layerGroup();
+let H, W, G, carte, etat, cible = null, trace, vueCourante = null, rapportOuvert = null;
+const pts = { de: null, vers: null }, marqueurs = {}, abrisLayer = L.layerGroup(), rapportsLayer = L.layerGroup();
+let rapportMarqueurs = {}, calquesInfo = [], fondActif = null;
+const couches = {}, surActives = new Set(), affichage = { abris: true, rapports: true };
 
 // Coordonnees continues de grille (gi vers le bas, gj vers la droite) <-> lat/lon <-> Leaflet CRS.Simple
 const geoVersGrille = (lat, lon) => [(G.lat0 - lat) / G.dlat, (lon - G.lon0) / G.dlon];
@@ -102,18 +132,36 @@ function lireCoord(txt) {
 const api = (url, methode = "GET", corps) => fetch(url, {
   method: methode, headers: { "Content-Type": "application/json" }, body: corps ? JSON.stringify(corps) : undefined });
 
+async function getJSON(url) {
+  const rep = await fetch(url);
+  if (!rep.ok) throw new Error(`${url} : HTTP ${rep.status}`);
+  return rep.json();
+}
+
 async function init() {
-  const info = await (await fetch("/api/info")).json();
+  const info = await getJSON("/api/info");
   H = info.hauteur; W = info.largeur; G = info;
-  etat = await (await api("/api/etat")).json();
-  carte = L.map("map", { crs: L.CRS.Simple, minZoom: -2, maxZoom: 5, zoomSnap: 0.25 });
+  // 1) La carte d'abord : elle s'affiche même si la suite échoue
+  carte = L.map("map", { crs: L.CRS.Simple, minZoom: -2, maxZoom: 5, zoomSnap: 0.25, attributionControl: false });
   const bornes = [[0, 0], [H, W]];
-  L.imageOverlay("/fond.png", bornes).addTo(carte);
   carte.fitBounds(bornes);
   carte.setMaxBounds([[-20, -20], [H + 20, W + 20]]);
-  abrisLayer.addTo(carte);
-  dessinerAbris();
+  carte.createPane("fonds").style.zIndex = 200;
+  carte.createPane("surcouches").style.zIndex = 250;
   carte.on("click", clicCarte);
+  carte.on("zoom zoomend", majEchelle);
+  majEchelle();
+  // 2) Puis l'état serveur et les calques, chacun isolé
+  const erreurs = [];
+  try { etat = await getJSON("/api/etat"); }
+  catch (e) { console.error(e); erreurs.push("état serveur"); etat = { abris: [], rapports: [], reglages: { air_bonbonne_kg: 0.55, autonomie_rover_km: 100 } }; }
+  try { await initCalques(bornes); }
+  catch (e) { console.error(e); erreurs.push("calques"); couches.secours = L.imageOverlay("/fond.png", bornes, { pane: "fonds" }).addTo(carte); }
+  if (erreurs.length) $("erreur").textContent = "Can't load : " + erreurs.join(", ") + ;
+  abrisLayer.addTo(carte);
+  rapportsLayer.addTo(carte);
+  dessinerAbris();
+  dessinerRapports();
 }
 
 function dessinerAbris() {
@@ -123,6 +171,86 @@ function dessinerAbris() {
     if (!dansZone(gi, gj)) return;
     L.circleMarker(grilleVersLL(gi, gj), { radius: 7, color: "#ffa21f", fillColor: "#ffa21f", fillOpacity: .9, weight: 2 })
       .bindTooltip(`${esc(a.nom)} (${formatCoord(a.lat, a.lon)})`).addTo(abrisLayer);
+  });
+}
+
+// ---- Calques (fonds + superpositions), légendes, échelle
+async function initCalques(bornes) {
+  calquesInfo = await getJSON("/api/calques");
+  calquesInfo.forEach(c => {
+    couches[c.id] = L.imageOverlay(c.url, bornes, { pane: c.type === "fond" ? "fonds" : "surcouches", opacity: c.type === "fond" ? 1 : 0.6 });
+  });
+  fondActif = (calquesInfo.find(c => c.id === "pente") || calquesInfo.find(c => c.type === "fond") || {}).id || null;
+  if (fondActif) couches[fondActif].addTo(carte);
+  rendreCalques(); majLegendes();
+}
+
+function rendreCalques() {
+  const fonds = calquesInfo.filter(c => c.type === "fond"), sur = calquesInfo.filter(c => c.type === "surcouche");
+  $("panneau-calques").innerHTML = `
+    <b>Fond</b>
+    ${fonds.map(c => `<label><input class="case" type="radio" name="fond" value="${c.id}" ${c.id === fondActif ? "checked" : ""}> ${esc(c.titre)}</label>`).join("")}
+    <label><input class="case" type="radio" name="fond" value="" ${fondActif ? "" : "checked"}> Aucun</label>
+    ${sur.length ? "<b>Superpositions</b>" + sur.map(c => `<div><label><input class="case" type="checkbox" data-sur="${c.id}"> ${esc(c.titre)}</label>
+      <input type="range" min="0" max="100" value="60" data-op="${c.id}" aria-label="Opacité ${esc(c.titre)}"></div>`).join("") : ""}
+    <b>Marqueurs</b>
+    <label><input class="case" type="checkbox" data-aff="abris" checked> <i class="pt" style="background:#ffa21f"></i> Abris</label>
+    <label><input class="case" type="checkbox" data-aff="rapports" checked> <i class="pt" style="background:#b06cff"></i> Rapports</label>`;
+}
+$("btn-calques").onclick = () => { $("panneau-calques").hidden = !$("panneau-calques").hidden; };
+$("panneau-calques").addEventListener("change", e => {
+  const t = e.target;
+  if (t.name === "fond") {
+    if (fondActif) carte.removeLayer(couches[fondActif]);
+    fondActif = t.value || null;
+    if (fondActif) couches[fondActif].addTo(carte);
+  } else if (t.dataset.sur) {
+    if (t.checked) { couches[t.dataset.sur].addTo(carte); surActives.add(t.dataset.sur); }
+    else { carte.removeLayer(couches[t.dataset.sur]); surActives.delete(t.dataset.sur); }
+  } else if (t.dataset.aff) {
+    affichage[t.dataset.aff] = t.checked; appliquerAffichage();
+  }
+  majLegendes();
+});
+$("panneau-calques").addEventListener("input", e => {
+  if (e.target.dataset.op) couches[e.target.dataset.op].setOpacity(e.target.value / 100);
+});
+function appliquerAffichage() {
+  [[abrisLayer, affichage.abris], [rapportsLayer, affichage.rapports]].forEach(([couche, on]) =>
+    on ? couche.addTo(carte) : carte.removeLayer(couche));
+}
+
+function majLegendes() {
+  const actifs = [fondActif, ...surActives].filter(Boolean).map(id => calquesInfo.find(c => c.id === id));
+  $("legendes").innerHTML = actifs.map(c => {
+    const l = c.legende, degrade = l.stops.map(([p, col]) => `${col} ${p * 100}%`).join(", ");
+    const val = x => x == null ? "" : `${+Number(x).toFixed(2)}${l.unite} `;
+    return `<div class="leg"><div class="leg-t">${esc(c.titre)}</div>
+      <div class="leg-barre" style="background:linear-gradient(to right, ${degrade})"></div>
+      <div class="leg-l"><span>${val(l.min)}${esc(l.etiquettes[0])}</span><span>${val(l.max)}${esc(l.etiquettes[1])}</span></div>
+      ${l.note ? `<div class="leg-n">${esc(l.note)}</div>` : ""}</div>`;
+  }).join("");
+}
+
+// Échelle : 1 unité Leaflet = 1 cellule = taille_cellule_m mètres ; en CRS.Simple, 1 unité = 2^zoom pixels
+function majEchelle() {
+  const pxParM = carte.options.crs.scale(carte.getZoom()) / G.taille_cellule_m;
+  const brut = 110 / pxParM, p = 10 ** Math.floor(Math.log10(brut)), r = brut / p;
+  const m = (r >= 5 ? 5 : r >= 2 ? 2 : 1) * p;
+  $("echelle-barre").style.width = `${m * pxParM}px`;
+  $("echelle-txt").textContent = m >= 1000 ? `${m / 1000} km` : `${m} m`;
+}
+
+// ---- Rapports épinglés sur la carte
+function dessinerRapports() {
+  rapportsLayer.clearLayers(); rapportMarqueurs = {};
+  etat.rapports.filter(r => r.lat != null && r.visible).forEach(r => {
+    const [gi, gj] = geoVersGrille(r.lat, r.lon);
+    if (!dansZone(gi, gj)) return;
+    const extrait = esc(r.texte.slice(0, 300)) + (r.texte.length > 300 ? "…" : "");
+    rapportMarqueurs[r.id] = L.circleMarker(grilleVersLL(gi, gj), { radius: 7, color: "#fff", weight: 2, fillColor: "#b06cff", fillOpacity: 1 })
+      .bindPopup(`<b>${esc(r.titre || "Rapport")}</b><br><small>${esc(r.date)}</small><div style="white-space:pre-wrap;margin-top:4px">${extrait}</div>`)
+      .addTo(rapportsLayer);
   });
 }
 
@@ -147,7 +275,7 @@ function placer(cle, champ) {
     const c = lireCoord(champ.value);
     const [gi, gj] = c ? geoVersGrille(c[0], c[1]) : [-1, -1];
     if (!c || !dansZone(gi, gj)) {
-      $("erreur").textContent = !c ? "Format attendu : lat, lon" : "Point hors de la zone cartographiée";
+      $("erreur").textContent = !c ? "Please enter the location as : lat, lon" : "The location selected is out ouf the bounds of the map";
     } else {
       pts[cle] = c;
       marqueurs[cle] = L.circleMarker(grilleVersLL(gi, gj), { radius: 7, color: cle === "de" ? "#4aa3ff" : "#ff5a3c", fillOpacity: 1 })
@@ -173,15 +301,23 @@ async function calculer() {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
       body: JSON.stringify({ depart: cellule(pts.de), arrivee: cellule(pts.vers), profil: { rover: $("profil").value === "rover" } }) });
     const texte = await rep.text();
-    if (moi !== numCalcul) return;                       // une requête plus récente a pris le relais
+    if (moi !== numCalcul) return;                      
     let d; try { d = JSON.parse(texte); } catch { d = null; }
     if (!rep.ok || !d) { out.innerHTML = `<span class="ko">${esc(d?.erreur || "Erreur serveur (" + rep.status + "), voir la console Flask")}</span>`; return; }
-    trace = L.polyline(d.chemin.map(([i, j]) => grilleVersLL(i + .5, j + .5)),
-      { color: d.faisable ? "#ffd23c" : "#ff5a3c", weight: 4 }).addTo(carte);
+    const etapes = d.etapes || [];
+    trace = L.featureGroup([L.polyline(d.chemin.map(([i, j]) => grilleVersLL(i + .5, j + .5)),
+      { color: d.faisable ? "#ffd23c" : "#ff5a3c", weight: 4 })]);
+    etapes.forEach(a => {                                // abris où le rover se recharge
+      const [gi, gj] = geoVersGrille(a.lat, a.lon);
+      L.circleMarker(grilleVersLL(gi, gj), { radius: 10, color: "#fff", weight: 3, fillColor: "#ffa21f", fillOpacity: 1 })
+        .bindTooltip(`Recharge : ${esc(a.nom)}`).addTo(trace);
+    });
+    trace.addTo(carte);
     out.innerHTML = `
       Distance : <b>${(d.distance_m / 1000).toFixed(1)} km</b><br>
       Temps de trajet : <b>${formatDuree(d.temps_min)}</b><br>
       Bonbonnes de gaz : <b>${d.bonbonnes}</b>
+      ${etapes.length ? `<br>Recharge aux abris : <b class="ok">${etapes.map(a => esc(a.nom)).join(" → ")}</b>` : ""}
       ${d.faisable ? "" : `<br><b class="ko">${esc(d.message)}</b>`}`;
   } catch (err) {
     if (moi === numCalcul) out.innerHTML = `<span class="ko">${err.name === "AbortError" ? "Calcul trop long (plus de 60 s)" : "Serveur injoignable"}</span>`;
@@ -194,7 +330,7 @@ $("menu").onclick = e => { const v = e.target.dataset.vue; if (v) ouvrir(v); };
 
 function ouvrir(nom) {
   $("menu").hidden = true; vueCourante = nom;
-  const vue = $("vue"); vue.hidden = false; cible = null;
+  const vue = $("vue"); vue.hidden = false; cible = null; document.body.classList.add("vue-ouverte");
   const fermer = `<button class="sec" onclick="fermer()">Fermer</button>`;
   if (nom === "infos") {
     const r = etat.reglages;
@@ -214,14 +350,25 @@ function ouvrir(nom) {
   } else if (nom === "rapports") {
     vue.innerHTML = `
       <div class="entete"><h2>Rapports</h2><button class="act" onclick="ouvrir('nouveau')">+ Nouveau rapport</button></div>
-      ${etat.rapports.map(r => `<details><summary>${esc(r.date)}${r.titre ? " – " + esc(r.titre) : ""}</summary><pre>${esc(r.texte)}</pre></details>`).join("")
-        || '<p class="vide">Aucun rapport.</p>'}
+      ${etat.rapports.map(r => {
+        const pos = r.lat != null;
+        return `<details ${r.id === rapportOuvert ? "open" : ""}><summary>${pos ? "📍 " : ""}${esc(r.date)}${r.titre ? " – " + esc(r.titre) : ""}</summary>
+          <pre>${esc(r.texte)}</pre>
+          <label><input class="case" type="checkbox" ${r.visible ? "checked" : ""} ${pos ? "" : "disabled"} onchange="basculerRapport('${r.id}', this.checked)"> Afficher sur la carte</label>
+          <label for="pos-${r.id}" style="display:block;margin-top:8px">Position :</label>
+          <input id="pos-${r.id}" class="coord" value="${pos ? formatCoord(r.lat, r.lon) : ""}" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
+          <div class="barre"><button class="sec" onclick="placerRapport('${r.id}')">Placer</button>
+          ${pos ? `<button class="sec" onclick="centrerRapport('${r.id}')">Voir sur la carte</button>` : ""}</div></details>`;
+      }).join("") || '<p class="vide">Aucun rapport.</p>'}
+      <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>
       <div class="barre">${fermer}</div>`;
   } else if (nom === "nouveau") {
     vue.innerHTML = `
       <div class="entete"><h2>Nouveau rapport</h2></div>
       <label for="rtitre">Titre (facultatif) :</label><input id="rtitre">
       <label for="rtexte">Rapport :</label><textarea id="rtexte"></textarea>
+      <label for="rpos">Position (facultatif) :</label>
+      <input id="rpos" class="coord" placeholder="lat, lon ou clic sur la carte" autocomplete="off">
       <div class="barre"><button class="act" onclick="sauverRapport()">Enregistrer</button>
       <button class="sec" onclick="ouvrir('rapports')">Annuler</button></div>
       <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>`;
@@ -229,7 +376,7 @@ function ouvrir(nom) {
     vue.innerHTML = `<div class="entete"><h2>Ressources</h2>${fermer}</div><p class="vide">Rien pour le moment.</p>`;
   }
 }
-function fermer() { $("vue").hidden = true; vueCourante = null; cible = null; }
+function fermer() { $("vue").hidden = true; vueCourante = null; cible = null; document.body.classList.remove("vue-ouverte"); }
 
 async function sauverReglages() {
   const rep = await api("/api/reglages", "PUT", { air_bonbonne_kg: $("air").value, autonomie_rover_km: $("auto").value });
@@ -248,10 +395,35 @@ async function supprimerAbri(k) {
   if (rep.ok) { etat.abris = await rep.json(); dessinerAbris(); ouvrir("infos"); }
 }
 async function sauverRapport() {
-  const rep = await api("/api/rapports", "POST", { titre: $("rtitre").value, texte: $("rtexte").value });
+  const corps = { titre: $("rtitre").value, texte: $("rtexte").value };
+  if ($("rpos").value.trim()) {
+    const c = lireCoord($("rpos").value);
+    if (!c) { $("erreur-vue").textContent = "Format attendu : lat, lon"; return; }
+    corps.lat = c[0]; corps.lon = c[1];
+  }
+  const rep = await api("/api/rapports", "POST", corps);
   const d = await rep.json();
   if (!rep.ok) { $("erreur-vue").textContent = d.erreur; return; }
-  etat.rapports = d; ouvrir("rapports");
+  etat.rapports = d; dessinerRapports(); ouvrir("rapports");
+}
+async function basculerRapport(id, visible) {
+  const rep = await api(`/api/rapports/${id}`, "PATCH", { visible });
+  if (rep.ok) { etat.rapports = await rep.json(); dessinerRapports(); }
+}
+async function placerRapport(id) {
+  const txt = $("pos-" + id).value.trim(), c = txt ? lireCoord(txt) : null;
+  if (txt && !c) { $("erreur-vue").textContent = "Format attendu : lat, lon"; return; }
+  const rep = await api(`/api/rapports/${id}`, "PATCH", c ? { lat: c[0], lon: c[1] } : { lat: null, lon: null });
+  const d = await rep.json();
+  if (!rep.ok) { $("erreur-vue").textContent = d.erreur; return; }
+  etat.rapports = d; rapportOuvert = id; dessinerRapports(); ouvrir("rapports");
+}
+function centrerRapport(id) {
+  const r = etat.rapports.find(x => x.id === id), m = rapportMarqueurs[id];
+  if (!r || r.lat == null) return;
+  const [gi, gj] = geoVersGrille(r.lat, r.lon);
+  carte.panTo(grilleVersLL(gi, gj));
+  if (m) m.openPopup();
 }
 
 init();

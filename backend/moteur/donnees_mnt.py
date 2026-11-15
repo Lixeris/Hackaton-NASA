@@ -120,6 +120,7 @@ def generer_fond_pente(chemin_pente, sortie_png, zone=None, facteur=5, unite="de
     ])
     rgb[~valide] = (20, 20, 20)                 # donnees manquantes : gris fonce
     Image.fromarray(rgb.astype("uint8")).save(sortie_png)
+    return float(lo), float(hi)   # plage de pente (deg) pour la legende
 
 
 def cellule_vers_xy(i, j, meta):
