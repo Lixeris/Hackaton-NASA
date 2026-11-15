@@ -9,14 +9,12 @@ Image.MAX_IMAGE_PIXELS = None
 
 DENIVELE = [(0, (25, 55, 95)), (.5, (215, 185, 80)), (1, (215, 60, 40))]
 DANGER = [(0, (60, 170, 90)), (.5, (240, 210, 60)), (1, (215, 50, 40))]
-CONFIANCE = [(0, (215, 50, 40)), (.5, (240, 210, 60)), (1, (60, 170, 90))]
 
 # id, titre, fichier, palette, vmin, vmax, unite, (etiquette bas, etiquette haut)
-# denivele.tif = pente en % (0-50 % affiches, au-dela = saturation) ; danger 0-1 ; confiance 0.6-1
+# denivele.tif = pente en % (0-50 % affiches, au-dela = saturation) ; danger 0-1
 DEFINITIONS = [
     ("denivele", "Elevation change", "denivele.tif", DENIVELE, 0, 50, "%", ("flat", "steep")),
     ("danger", "Danger zones", "danger.tif", DANGER, 0, 1, "", ("low", "high")),
-    ("confiance", "Data reliability", "confiance.tif", CONFIANCE, 0.6, 1, "", ("low", "high")),
 ]
 
 
@@ -55,14 +53,10 @@ def _legende(palette, vmin, vmax, unite, etiquettes, note=None):
 
 
 def construire_calques(dossier_tifs, dossier_front, facteur=5):
-    """Fond = relief ombre (frontend/fond.png, fourni tel quel) ; surcouches = denivele, danger, confiance."""
+    """Surcouches : denivele, danger. Le fond (frontend/fond.png) est charge directement par la page."""
     sortie = dossier_front / "calques"
     sortie.mkdir(exist_ok=True)
     calques = []
-    fond = dossier_front / "fond.png"
-    if fond.exists():
-        calques.append({"id": "relief", "titre": "Relief shading", "type": "fond",
-                        "url": f"/fond.png?v={int(fond.stat().st_mtime)}", "legende": None})
     for cid, titre, fichier, palette, vmin, vmax, unite, etiq in DEFINITIONS:
         chemin = dossier_tifs / fichier
         if not chemin.exists():

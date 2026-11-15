@@ -8,8 +8,9 @@
 <style>
   :root { --fond: #1c1411; --encre: #f0e2d8; --trait: #4a3a31; --accent: #ffd23c; --ko: #ff8a6b; --ok: #8be08b; }
   html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
-  #app { display: flex; height: 100%; }
-  #panneau { width: 290px; padding: 16px; background: var(--fond); color: var(--encre); overflow-y: auto; box-sizing: border-box; }
+  #app { position: relative; height: 100%; overflow: hidden; }
+  #panneau { position: absolute; top: 10px; left: 10px; z-index: 1000; width: 290px; max-height: calc(100% - 90px); padding: 16px; background: var(--fond); color: var(--encre);
+    overflow-y: auto; box-sizing: border-box; border-radius: 6px; }
   #panneau h1 { margin: 0 0 14px; font-size: 18px; }
   label { display: block; margin: 12px 0 3px; font-size: 13px; }
   input, select, textarea, button { font: inherit; box-sizing: border-box; }
@@ -20,7 +21,7 @@
   #resultat:empty { display: none; }
   .ko { color: var(--ko); } .ok { color: var(--ok); }
   #erreur { margin-top: 8px; font-size: 13px; color: var(--ko); min-height: 1em; }
-  #carte-zone { flex: 1; position: relative; min-width: 0; min-height: 0; }
+  #carte-zone { position: absolute; inset: 0; }
   #map { position: absolute; inset: 0; background: #000; }
 
   #burger { position: absolute; top: 10px; right: 10px; z-index: 1100; width: 40px; height: 40px; border: 0; border-radius: 6px;
@@ -111,7 +112,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 
 let H, W, G, carte, etat, cible = null, trace, vueCourante = null, rapportOuvert = null;
 const pts = { de: null, vers: null }, marqueurs = {}, abrisLayer = L.layerGroup(), rapportsLayer = L.layerGroup();
-let rapportMarqueurs = {}, calquesInfo = [], fondActif = null;
+let rapportMarqueurs = {}, calquesInfo = [];
 const couches = {}, surActives = new Set(), affichage = { abris: true, rapports: true };
 
 // Coordonnees continues de grille (gi vers le bas, gj vers la droite) <-> lat/lon <-> Leaflet CRS.Simple
@@ -142,12 +143,17 @@ async function init() {
   const info = await getJSON("/api/info");
   H = info.hauteur; W = info.largeur; G = info;
   // 1) La carte d'abord : elle s'affiche même si la suite échoue
-  carte = L.map("map", { crs: L.CRS.Simple, minZoom: -2, maxZoom: 5, zoomSnap: 0.25, attributionControl: false });
+  carte = L.map("map", { crs: L.CRS.Simple, minZoom: -5, maxZoom: 5, zoomSnap: 0.25, zoomControl: false, attributionControl: false,
+    maxBoundsViscosity: 1 });
+  L.control.zoom({ position: "bottomleft" }).addTo(carte);
   const bornes = [[0, 0], [H, W]];
-  carte.fitBounds(bornes);
-  carte.setMaxBounds([[-20, -20], [H + 20, W + 20]]);
+  carte.setMaxBounds(bornes);                          // on ne sort jamais de l'image
+  ajusterZoomMin(bornes);                              // zoom mini = l'image remplit tout l'ecran
+  carte.setView([H / 2, W / 2], carte.getMinZoom());
+  carte.on("resize", () => ajusterZoomMin(bornes));
   carte.createPane("fonds").style.zIndex = 200;
   carte.createPane("surcouches").style.zIndex = 250;
+  L.imageOverlay("/fond.png", bornes, { pane: "fonds" }).addTo(carte);   // fond fixe
   carte.on("click", clicCarte);
   carte.on("zoom zoomend", majEchelle);
   majEchelle();
@@ -156,12 +162,17 @@ async function init() {
   try { etat = await getJSON("/api/etat"); }
   catch (e) { console.error(e); erreurs.push("server state"); etat = { abris: [], rapports: [], reglages: { air_bonbonne_kg: 0.55, autonomie_rover_km: 100 } }; }
   try { await initCalques(bornes); }
-  catch (e) { console.error(e); erreurs.push("layers"); couches.secours = L.imageOverlay("/fond.png", bornes, { pane: "fonds" }).addTo(carte); }
+  catch (e) { console.error(e); erreurs.push("layers"); }
   if (erreurs.length) $("erreur").textContent = "Can't load: " + erreurs.join(", ");
   abrisLayer.addTo(carte);
   rapportsLayer.addTo(carte);
   dessinerAbris();
   dessinerRapports();
+}
+
+function ajusterZoomMin(bornes) {
+  carte.options.minZoom = -5;
+  carte.setMinZoom(carte.getBoundsZoom(bornes, true));   // true = l'image couvre toute la zone visible
 }
 
 function dessinerAbris() {
@@ -176,22 +187,16 @@ function dessinerAbris() {
 
 // ---- Calques (fonds + superpositions), légendes, échelle
 async function initCalques(bornes) {
-  calquesInfo = await getJSON("/api/calques");
+  calquesInfo = (await getJSON("/api/calques")).filter(c => c.type === "surcouche");
   calquesInfo.forEach(c => {
-    couches[c.id] = L.imageOverlay(c.url, bornes, { pane: c.type === "fond" ? "fonds" : "surcouches", opacity: c.type === "fond" ? 1 : 0.6 });
+    couches[c.id] = L.imageOverlay(c.url, bornes, { pane: "surcouches", opacity: 0.6 });
   });
-  fondActif = (calquesInfo.find(c => c.id === "pente") || calquesInfo.find(c => c.type === "fond") || {}).id || null;
-  if (fondActif) couches[fondActif].addTo(carte);
   rendreCalques(); majLegendes();
 }
 
 function rendreCalques() {
-  const fonds = calquesInfo.filter(c => c.type === "fond"), sur = calquesInfo.filter(c => c.type === "surcouche");
   $("panneau-calques").innerHTML = `
-    <b>Background</b>
-    ${fonds.map(c => `<label><input class="case" type="radio" name="fond" value="${c.id}" ${c.id === fondActif ? "checked" : ""}> ${esc(c.titre)}</label>`).join("")}
-    <label><input class="case" type="radio" name="fond" value="" ${fondActif ? "" : "checked"}> None</label>
-    ${sur.length ? "<b>Overlays</b>" + sur.map(c => `<div><label><input class="case" type="checkbox" data-sur="${c.id}"> ${esc(c.titre)}</label>
+    ${calquesInfo.length ? "<b>Overlays</b>" + calquesInfo.map(c => `<div><label><input class="case" type="checkbox" data-sur="${c.id}"> ${esc(c.titre)}</label>
       <input type="range" min="0" max="100" value="60" data-op="${c.id}" aria-label="Opacity ${esc(c.titre)}"></div>`).join("") : ""}
     <b>Markers</b>
     <label><input class="case" type="checkbox" data-aff="abris" checked> <i class="pt" style="background:#ffa21f"></i> Shelters</label>
@@ -200,11 +205,7 @@ function rendreCalques() {
 $("btn-calques").onclick = () => { $("panneau-calques").hidden = !$("panneau-calques").hidden; };
 $("panneau-calques").addEventListener("change", e => {
   const t = e.target;
-  if (t.name === "fond") {
-    if (fondActif) carte.removeLayer(couches[fondActif]);
-    fondActif = t.value || null;
-    if (fondActif) couches[fondActif].addTo(carte);
-  } else if (t.dataset.sur) {
+  if (t.dataset.sur) {
     if (t.checked) { couches[t.dataset.sur].addTo(carte); surActives.add(t.dataset.sur); }
     else { carte.removeLayer(couches[t.dataset.sur]); surActives.delete(t.dataset.sur); }
   } else if (t.dataset.aff) {
@@ -221,7 +222,7 @@ function appliquerAffichage() {
 }
 
 function majLegendes() {
-  const actifs = [fondActif, ...surActives].filter(Boolean).map(id => calquesInfo.find(c => c.id === id)).filter(c => c && c.legende);
+  const actifs = [...surActives].map(id => calquesInfo.find(c => c.id === id)).filter(c => c && c.legende);
   $("legendes").innerHTML = actifs.map(c => {
     const l = c.legende, degrade = l.stops.map(([p, col]) => `${col} ${p * 100}%`).join(", ");
     const val = x => x == null ? "" : `${+Number(x).toFixed(2)}${l.unite} `;
@@ -255,13 +256,18 @@ function dessinerRapports() {
 }
 
 // ---- Saisie des coordonnees : taper, ou cliquer dans le champ puis sur la carte
-document.addEventListener("focusin", e => { cible = e.target.classList?.contains("coord") ? e.target : cible; });
+document.addEventListener("focusin", e => {
+  const t = e.target;
+  if (t.classList?.contains("coord")) cible = t;
+  else if (!t.closest?.("#map")) cible = null;        // un autre champ/bouton annule la selection (la carte, elle, la garde)
+});
 
 function clicCarte(e) {
   const gi = H - e.latlng.lat, gj = e.latlng.lng;
   if (!dansZone(gi, gj)) return;
   const [lat, lon] = grilleVersGeo(gi, gj);
-  const champ = cible && document.body.contains(cible) ? cible : (!$("de").value ? $("de") : !$("vers").value ? $("vers") : $("de"));
+  const champ = cible && document.body.contains(cible) ? cible : null;
+  if (!champ) return;                                  // on ne place un point qu'apres avoir clique dans un champ de coordonnees
   champ.value = formatCoord(lat, lon);
   champ.dispatchEvent(new Event("change"));
   cible = null;
@@ -328,14 +334,21 @@ async function calculer() {
 $("burger").onclick = () => { $("menu").hidden = !$("menu").hidden; };
 $("menu").onclick = e => { const v = e.target.dataset.vue; if (v) ouvrir(v); };
 
+// Clic en dehors : ferme menu, vue et panneau des calques (sauf clic sur la carte pendant qu'un champ de coordonnees de la vue est actif)
+document.addEventListener("pointerdown", e => {
+  const t = e.target;
+  if (!$("menu").hidden && !t.closest("#menu, #burger")) $("menu").hidden = true;
+  if (vueCourante && !t.closest("#vue, #menu, #burger") && !(cible && $("vue").contains(cible) && t.closest("#map"))) fermer();
+  if (!$("panneau-calques").hidden && !t.closest("#panneau-calques, #btn-calques")) $("panneau-calques").hidden = true;
+}, true);
+
 function ouvrir(nom) {
   $("menu").hidden = true; vueCourante = nom;
   const vue = $("vue"); vue.hidden = false; cible = null; document.body.classList.add("vue-ouverte");
-  const fermer = `<button class="sec" onclick="fermer()">Close</button>`;
   if (nom === "infos") {
     const r = etat.reglages;
     vue.innerHTML = `
-      <div class="entete"><h2>Info</h2>${fermer}</div>
+      <div class="entete"><h2>Info</h2></div>
       <label for="air">Air per tank (kg):</label>
       <input id="air" type="number" step="0.01" min="0.01" value="${r.air_bonbonne_kg}" onchange="sauverReglages()">
       <label for="auto">Rover range without recharging (km):</label>
@@ -352,16 +365,14 @@ function ouvrir(nom) {
       <div class="entete"><h2>Reports</h2><button class="act" onclick="ouvrir('nouveau')">+ New report</button></div>
       ${etat.rapports.map(r => {
         const pos = r.lat != null;
-        return `<details ${r.id === rapportOuvert ? "open" : ""}><summary>${pos ? "📍 " : ""}${esc(r.date)}${r.titre ? " – " + esc(r.titre) : ""}</summary>
+        return `<details ${r.id === rapportOuvert ? "open" : ""}><summary>${esc(r.date)}${r.titre ? " – " + esc(r.titre) : ""}</summary>
           <pre>${esc(r.texte)}</pre>
           <label><input class="case" type="checkbox" ${r.visible ? "checked" : ""} ${pos ? "" : "disabled"} onchange="basculerRapport('${r.id}', this.checked)"> Show on map</label>
           <label for="pos-${r.id}" style="display:block;margin-top:8px">Position:</label>
-          <input id="pos-${r.id}" class="coord" value="${pos ? formatCoord(r.lat, r.lon) : ""}" placeholder="lat, lon or click on the map" autocomplete="off">
-          <div class="barre"><button class="sec" onclick="placerRapport('${r.id}')">Place</button>
-          ${pos ? `<button class="sec" onclick="centrerRapport('${r.id}')">View on map</button>` : ""}</div></details>`;
+          <input id="pos-${r.id}" class="coord" value="${pos ? formatCoord(r.lat, r.lon) : ""}" placeholder="lat, lon or click on the map" autocomplete="off" onchange="placerRapport('${r.id}')">
+          ${pos ? `<div class="barre"><button class="sec" onclick="centrerRapport('${r.id}')">View on map</button></div>` : ""}</details>`;
       }).join("") || '<p class="vide">No reports.</p>'}
-      <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>
-      <div class="barre">${fermer}</div>`;
+      <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>`;
   } else if (nom === "nouveau") {
     vue.innerHTML = `
       <div class="entete"><h2>New report</h2></div>
@@ -373,7 +384,7 @@ function ouvrir(nom) {
       <button class="sec" onclick="ouvrir('rapports')">Cancel</button></div>
       <div id="erreur-vue" class="ko" style="margin-top:8px;font-size:13px"></div>`;
   } else {
-    vue.innerHTML = `<div class="entete"><h2>Resources</h2>${fermer}</div><p class="vide">Nothing yet.</p>`;
+    vue.innerHTML = `<div class="entete"><h2>Resources</h2></div><p class="vide">Nothing yet.</p>`;
   }
 }
 function fermer() { $("vue").hidden = true; vueCourante = null; cible = null; document.body.classList.remove("vue-ouverte"); }
