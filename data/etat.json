@@ -1,7 +1,7 @@
 {
   "reglages": {
     "air_bonbonne_kg": 0.55,
-    "autonomie_rover_km": 5.0
+    "autonomie_rover_km": 15.0
   },
   "abris": [
     {
@@ -13,9 +13,43 @@
       "nom": "Shelter 2",
       "lat": 18.42135,
       "lon": 77.59533
+    },
+    {
+      "nom": "Shelter 3",
+      "lat": 18.38565,
+      "lon": 77.59156
+    },
+    {
+      "nom": "Shelter 4",
+      "lat": 18.45126,
+      "lon": 77.6915
+    },
+    {
+      "nom": "Shelter 5",
+      "lat": 18.4954,
+      "lon": 77.6079
+    },
+    {
+      "nom": "Shelter 6",
+      "lat": 18.44172,
+      "lon": 77.91023
+    },
+    {
+      "nom": "Shelter 7",
+      "lat": 18.28962,
+      "lon": 77.75309
     }
   ],
   "rapports": [
+    {
+      "id": "a14bc370",
+      "titre": "test7",
+      "texte": "kol,v ,l",
+      "date": "2026-11-15 23:38",
+      "lat": 18.38028,
+      "lon": 77.61167,
+      "visible": true
+    },
     {
       "id": "461fe2b6",
       "titre": "rapport test3",

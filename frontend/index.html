@@ -114,7 +114,7 @@ const pts = { de: null, vers: null }, marqueurs = {}, abrisLayer = L.layerGroup(
 let rapportMarqueurs = {}, calquesInfo = [];
 const couches = {}, surActives = new Set(), affichage = { abris: true, rapports: true };
 
-// Coordonnees continues de grille (gi vers le bas, gj vers la droite) <-> lat/lon <-> Leaflet CRS.Simple
+
 const geoVersGrille = (lat, lon) => [(G.lat0 - lat) / G.dlat, (lon - G.lon0) / G.dlon];
 const grilleVersGeo = (gi, gj) => [G.lat0 - gi * G.dlat, G.lon0 + gj * G.dlon];
 const grilleVersLL = (gi, gj) => [H - gi, gj];
@@ -141,22 +141,22 @@ async function getJSON(url) {
 async function init() {
   const info = await getJSON("/api/info");
   H = info.hauteur; W = info.largeur; G = info;
-  // 1) La carte d'abord : elle s'affiche même si la suite échoue
+  
   carte = L.map("map", { crs: L.CRS.Simple, minZoom: -5, maxZoom: 5, zoomSnap: 0.25, zoomControl: false, attributionControl: false,
     maxBoundsViscosity: 1 });
   L.control.zoom({ position: "bottomleft" }).addTo(carte);
   const bornes = [[0, 0], [H, W]];
-  carte.setMaxBounds(bornes);                          // on ne sort jamais de l'image
-  ajusterZoomMin(bornes);                              // zoom mini = l'image remplit tout l'ecran
+  carte.setMaxBounds(bornes);                          
+  ajusterZoomMin(bornes);                              
   carte.setView([H / 2, W / 2], carte.getMinZoom());
   carte.on("resize", () => ajusterZoomMin(bornes));
   carte.createPane("fonds").style.zIndex = 200;
   carte.createPane("surcouches").style.zIndex = 250;
-  L.imageOverlay("/fond.png", bornes, { pane: "fonds" }).addTo(carte);   // fond fixe
+  L.imageOverlay("/fond.png", bornes, { pane: "fonds" }).addTo(carte);  
   carte.on("click", clicCarte);
   carte.on("zoom zoomend", majEchelle);
   majEchelle();
-  // 2) Puis l'état serveur et les calques, chacun isolé
+  
   const erreurs = [];
   try { etat = await getJSON("/api/etat"); }
   catch (e) { console.error(e); erreurs.push("server state"); etat = { abris: [], rapports: [], reglages: { air_bonbonne_kg: 0.55, autonomie_rover_km: 100 } }; }
@@ -171,7 +171,7 @@ async function init() {
 
 function ajusterZoomMin(bornes) {
   carte.options.minZoom = -5;
-  carte.setMinZoom(carte.getBoundsZoom(bornes, true));   // true = l'image couvre toute la zone visible
+  carte.setMinZoom(carte.getBoundsZoom(bornes, true));  
 }
 
 function dessinerAbris() {
@@ -184,9 +184,9 @@ function dessinerAbris() {
   });
 }
 
-// ---- Calques (fonds + superpositions), légendes, échelle
+
 async function initCalques(bornes) {
-  const ORDRE = ["exposition", "risque", "denivele"];   // seuls calques autorisés, dans cet ordre
+  const ORDRE = ["exposition", "risque", "denivele"];   
   calquesInfo = (await getJSON("/api/calques"))
     .filter(c => c.type === "surcouche" && ORDRE.includes(c.id))
     .sort((a, b) => ORDRE.indexOf(a.id) - ORDRE.indexOf(b.id));
@@ -235,7 +235,7 @@ function majLegendes() {
   }).join("");
 }
 
-// Échelle : 1 unité Leaflet = 1 cellule = taille_cellule_m mètres ; en CRS.Simple, 1 unité = 2^zoom pixels
+
 function majEchelle() {
   const pxParM = carte.options.crs.scale(carte.getZoom()) / G.taille_cellule_m;
   const brut = 110 / pxParM, p = 10 ** Math.floor(Math.log10(brut)), r = brut / p;
@@ -244,7 +244,7 @@ function majEchelle() {
   $("echelle-txt").textContent = m >= 1000 ? `${m / 1000} km` : `${m} m`;
 }
 
-// ---- Rapports épinglés sur la carte
+
 function dessinerRapports() {
   rapportsLayer.clearLayers(); rapportMarqueurs = {};
   etat.rapports.filter(r => r.lat != null && r.visible).forEach(r => {
@@ -257,11 +257,11 @@ function dessinerRapports() {
   });
 }
 
-// ---- Saisie des coordonnees : taper, ou cliquer dans le champ puis sur la carte
+
 document.addEventListener("focusin", e => {
   const t = e.target;
   if (t.classList?.contains("coord")) cible = t;
-  else if (!t.closest?.("#map")) cible = null;        // un autre champ/bouton annule la selection (la carte, elle, la garde)
+  else if (!t.closest?.("#map")) cible = null;        
 });
 
 function clicCarte(e) {
@@ -269,7 +269,7 @@ function clicCarte(e) {
   if (!dansZone(gi, gj)) return;
   const [lat, lon] = grilleVersGeo(gi, gj);
   const champ = cible && document.body.contains(cible) ? cible : null;
-  if (!champ) return;                                  // on ne place un point qu'apres avoir clique dans un champ de coordonnees
+  if (!champ) return;                                  
   champ.value = formatCoord(lat, lon);
   champ.dispatchEvent(new Event("change"));
   cible = null;
@@ -332,11 +332,11 @@ async function calculer() {
   } finally { clearTimeout(minuteur); }
 }
 
-// ---- Menu déroulant et vues
+
 $("burger").onclick = () => { $("menu").hidden = !$("menu").hidden; };
 $("menu").onclick = e => { const v = e.target.dataset.vue; if (v) ouvrir(v); };
 
-// Clic en dehors : ferme menu, vue et panneau des calques (sauf clic sur la carte pendant qu'un champ de coordonnees de la vue est actif)
+
 document.addEventListener("pointerdown", e => {
   const t = e.target;
   if (!$("menu").hidden && !t.closest("#menu, #burger")) $("menu").hidden = true;

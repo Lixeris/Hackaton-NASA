@@ -11,18 +11,11 @@ from moteur.weather import facteur_horaire
 
 @pytest.fixture
 def grille():
-    return grille_factice(taille=10, seed=42)  # seed fixe = resultats reproductibles
+    return grille_factice(taille=10, seed=42)  
 
 
 def grille_controlee(taille=10):
-    """
-    Grille deterministe pour les tests de chemin : un depart/arrivee toujours
-    praticables, et une bande de pente forte au milieu de la colonne centrale
-    (en laissant un passage libre sur les 2 premieres et 2 dernieres lignes,
-    pour que l'obstacle soit contournable et non un mur complet infranchissable).
-    Seul un profil permissif (rover, poids leger) peut la traverser directement ;
-    un profil plus restrictif doit la contourner, d'ou un chemin plus couteux.
-    """
+    
     grille = {}
     colonne_bloquee = taille // 2
     for i in range(taille):

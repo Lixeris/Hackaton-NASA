@@ -15,13 +15,13 @@ from moteur.donnees_mnt import (RAYON_MARS_M, RAYON_X_M, cellule_vers_latlon,
 RACINE = Path(__file__).resolve().parent.parent
 FRONTEND = RACINE / "frontend"
 TIFS = RACINE / "tifs"
-DENIVELE = TIFS / "denivele.tif"      # remplace pente.tif (pente en %)
-UNITE_DENIVELE = "pct"                  # "pct" = pourcentage de pente, "deg" = degres
+DENIVELE = TIFS / "denivele.tif"      
+UNITE_DENIVELE = "pct"                  
 FICHIER_ETAT = RACINE / "data" / "etat.json"
 
 app = Flask(__name__, static_folder=str(FRONTEND), static_url_path="")
 
-# Charge UNE fois au demarrage. Le fond de carte est frontend/fond.png (relief ombre fourni, non regenere).
+
 try:
     GRILLE, TAILLE, META = grille_depuis_pente(str(DENIVELE), unite=UNITE_DENIVELE)
 except FileNotFoundError:
@@ -31,7 +31,7 @@ H, W = META["shape"]
 CALQUES = construire_calques(TIFS, FRONTEND)   # PNG regeneres a chaque demarrage
 
 
-# ------------------------------------------------------------------ Etat serveur (abris, reglages, rapports)
+
 ETAT_DEFAUT = {
     "reglages": {"air_bonbonne_kg": 0.55, "autonomie_rover_km": 100},
     
@@ -100,7 +100,7 @@ def _trajet_par_abris(depart, arrivee, profil, autonomie_km):
 
     liens = {}
     def lien(u, v):
-        """(chemin, distance) du trajet u -> v si faisable avec une charge, sinon None."""
+        
         if (u, v) not in liens:
             r = calculer_chemin(GRILLE, TAILLE, noeuds[u][1], noeuds[v][1], profil, 1.0)
             d = longueur_chemin_m(r["chemin"], META["taille_cellule_m"]) if r else None
@@ -182,7 +182,7 @@ def api_route():
     return jsonify(_reponse(r))
 
 
-# ------------------------------------------------------------------ Pages et infos carte
+
 @app.get("/")
 def accueil():
     return app.send_static_file("index.html")
@@ -195,11 +195,11 @@ def info():
     return jsonify(
         hauteur=H, largeur=W, taille_cellule_m=t, demo=MODE_DEMO,
         lat0=math.degrees(y0 / RAYON_MARS_M), lon0=math.degrees(x0 / RAYON_X_M),      # coin haut-gauche
-        dlat=math.degrees(t / RAYON_MARS_M), dlon=math.degrees(t / RAYON_X_M),        # degres par cellule
+        dlat=math.degrees(t / RAYON_MARS_M), dlon=math.degrees(t / RAYON_X_M),        
     )
 
 
-# ------------------------------------------------------------------ Etat : reglages, abris, rapports
+
 @app.get("/api/calques")
 def calques():
     return jsonify(CALQUES)
